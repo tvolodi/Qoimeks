@@ -41,9 +41,15 @@ Fill the fields from the phrase only:
   пересчитал, по факту, түгендеу, санадым), or "unknown" if the phrase does not say.
 - sku_codes: codes of the catalog SKUs the operator most likely meant, best match first.
   One code when you are confident, up to three when several fit about equally well,
-  empty when nothing in the catalog fits. Match on meaning across both languages.
+  empty when nothing in the catalog fits. Match on meaning across both languages. Operators
+  often say the article instead of the name, letter by letter and with digits as words
+  ("эс тэ е эл триста пятьдесят" for ST-EL350); a location they name can help choose between
+  similar articles.
 - location_code: the catalog location the goods were received into, issued from, counted at,
-  or (for a transfer) moved out of. Empty string if not said or not in the catalog.
+  or (for a transfer) moved out of. Location codes are a zone letter (L left/слева/сол жақ,
+  R right/справа/оң жақ, D straight ahead/прямо/тура), a rack letter and a shelf number, said
+  in any form: "слева а три" and "эл а три" are both LA3. Empty string if the operator did not
+  name a place (the app then offers the SKU's usual location) or it is not in the catalog.
 - to_location_code: for a transfer, the destination location. Empty string otherwise.
 - qty: the quantity as a number in the SKU's own unit, or null if not said.
 
@@ -53,12 +59,18 @@ func systemPrompt(c store.Catalog) string {
 	var b strings.Builder
 	b.WriteString(instructions)
 	b.WriteString("\n\n<locations>\n")
+	codes := make(map[int64]string, len(c.Locations))
 	for _, l := range c.Locations {
+		codes[l.ID] = l.Code
 		fmt.Fprintf(&b, "%s\t%s\n", l.Code, l.Name)
 	}
-	b.WriteString("</locations>\n\n<skus>\n")
+	b.WriteString("</locations>\n\nEach SKU line is: code, name, unit, usual location (may be empty).\n<skus>\n")
 	for _, s := range c.SKUs {
-		fmt.Fprintf(&b, "%s\t%s\t%s\n", s.Code, s.Name, s.Unit)
+		home := ""
+		if s.LocationID != nil {
+			home = codes[*s.LocationID]
+		}
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", s.Code, s.Name, s.Unit, home)
 	}
 	b.WriteString("</skus>")
 	return b.String()

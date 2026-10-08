@@ -82,3 +82,58 @@ func (t *OpenAICompatible) Transcribe(ctx context.Context, audio []byte, filenam
 	}
 	return strings.TrimSpace(out.Text), nil
 }
+
+// ElevenLabs uses the Scribe speech-to-text API, which covers both Russian and Kazakh.
+type ElevenLabs struct {
+	APIKey string
+	Model  string
+	HTTP   *http.Client
+}
+
+func NewElevenLabs(apiKey, model string) *ElevenLabs {
+	return &ElevenLabs{APIKey: apiKey, Model: model, HTTP: &http.Client{Timeout: 60 * time.Second}}
+}
+
+func (t *ElevenLabs) Transcribe(ctx context.Context, audio []byte, filename, lang string) (string, error) {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	part, err := w.CreateFormFile("file", filename)
+	if err != nil {
+		return "", err
+	}
+	part.Write(audio)
+	w.WriteField("model_id", t.Model)
+	w.WriteField("tag_audio_events", "false")
+	if lang != "" {
+		w.WriteField("language_code", lang)
+	}
+	if err := w.Close(); err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.elevenlabs.io/v1/speech-to-text", &body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("xi-api-key", t.APIKey)
+	resp, err := t.HTTP.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ElevenLabs returned %s: %s", resp.Status, strings.TrimSpace(string(raw)))
+	}
+	var out struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", fmt.Errorf("ElevenLabs returned invalid JSON: %w", err)
+	}
+	return strings.TrimSpace(out.Text), nil
+}

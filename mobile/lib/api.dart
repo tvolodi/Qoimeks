@@ -4,15 +4,32 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 class Sku {
-  const Sku({required this.id, required this.code, required this.name, required this.unit});
+  const Sku({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.unit,
+    this.locationId,
+    this.altLocationId,
+  });
 
-  factory Sku.fromJson(Map<String, dynamic> j) =>
-      Sku(id: j['id'], code: j['code'], name: j['name'], unit: j['unit']);
+  factory Sku.fromJson(Map<String, dynamic> j) => Sku(
+        id: j['id'],
+        code: j['code'],
+        name: j['name'],
+        unit: j['unit'],
+        locationId: j['location_id'],
+        altLocationId: j['alt_location_id'],
+      );
 
   final int id;
   final String code;
   final String name;
   final String unit;
+
+  /// Where the SKU normally lives, and a second place to look.
+  final int? locationId;
+  final int? altLocationId;
 
   @override
   bool operator ==(Object other) => other is Sku && other.id == id;
@@ -43,6 +60,13 @@ class Catalog {
 
   final List<Sku> skus;
   final List<Location> locations;
+
+  Location? location(int? id) {
+    for (final l in locations) {
+      if (l.id == id) return l;
+    }
+    return null;
+  }
 }
 
 class BalanceRow {
@@ -207,9 +231,12 @@ class ApiClient {
     return Movement.fromJson(await _post('/api/movements/$movementId/reverse', {'id': id, 'operator': operator}));
   }
 
-  Future<Draft> voice(Uint8List audio, String filename) async {
+  /// [lang] ("ru" or "kk") tells the recogniser which alphabet to expect;
+  /// without it Kazakh speech comes back in Latin letters.
+  Future<Draft> voice(Uint8List audio, String filename, String lang) async {
     final j = await _send(() async {
       final req = http.MultipartRequest('POST', Uri.parse('$_base/api/voice'))
+        ..fields['lang'] = lang
         ..files.add(http.MultipartFile.fromBytes('audio', audio, filename: filename));
       return http.Response.fromStream(await _http.send(req));
     });

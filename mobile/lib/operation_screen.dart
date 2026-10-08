@@ -33,6 +33,8 @@ class _OperationScreenState extends State<OperationScreen> {
   String _kind = 'receipt';
   Sku? _sku;
   Location? _location;
+  // True while _location is the SKU's usual place filled in by the app, not chosen by the operator.
+  bool _locationIsUsual = false;
   Location? _toLocation;
   final _qty = TextEditingController();
 
@@ -99,6 +101,10 @@ class _OperationScreenState extends State<OperationScreen> {
     setState(() {
       _sku = sku;
       _balances = null;
+      if (_location == null || _locationIsUsual) {
+        _location = _catalog!.location(sku?.locationId);
+        _locationIsUsual = _location != null;
+      }
     });
     if (sku == null) return;
     widget.api.balances(sku.id).then((rows) {
@@ -151,7 +157,7 @@ class _OperationScreenState extends State<OperationScreen> {
     try {
       final rec = await widget.voice.stop();
       if (rec == null) throw const ApiException(422, 'empty recording');
-      final draft = await widget.api.voice(rec.bytes, rec.filename);
+      final draft = await widget.api.voice(rec.bytes, rec.filename, widget.settings.lang);
       if (mounted) _applyDraft(draft);
     } catch (e) {
       if (mounted) _toast(_s.error(e));
@@ -166,7 +172,10 @@ class _OperationScreenState extends State<OperationScreen> {
       _source = 'voice';
       _transcript = d.transcript;
       if (d.kind != null) _kind = d.kind!;
-      if (d.location != null) _location = d.location;
+      if (d.location != null) {
+        _location = d.location;
+        _locationIsUsual = false;
+      }
       if (d.toLocation != null) _toLocation = d.toLocation;
       if (d.qty != null) _qty.text = fmtQty(d.qty!);
       _candidates = d.skus.length > 1 ? d.skus : const [];
@@ -188,6 +197,7 @@ class _OperationScreenState extends State<OperationScreen> {
       _sku = null;
       _balances = null;
       _location = null;
+      _locationIsUsual = false;
       _toLocation = null;
       _qty.clear();
     });
@@ -339,7 +349,12 @@ class _OperationScreenState extends State<OperationScreen> {
           text: _location?.code,
           onTap: () async {
             final l = await _pickLocation(_s(_kind == 'transfer' ? 'from' : 'location'));
-            if (l != null) setState(() => _location = l);
+            if (l != null) {
+              setState(() {
+                _location = l;
+                _locationIsUsual = false;
+              });
+            }
           },
         ),
         if (_kind == 'transfer') ...[
@@ -382,11 +397,14 @@ class _OperationScreenState extends State<OperationScreen> {
       for (final b in rows)
         if (b.locationId != _location?.id) '${b.locationCode} (${fmtQty(b.qty)})',
     ];
+    final alt = _catalog!.location(sku.altLocationId);
     final q = _qtyValue;
     final goesNegative = here != null && q != null && (_kind == 'issue' || _kind == 'transfer') && q > here;
     return [
       if (here != null)
         Text('${_location!.code} — ${_s('balance')} ${fmtQty(here)} ${sku.unit}', style: theme.textTheme.bodyLarge),
+      if (alt != null && alt != _location)
+        Text('${_s('look_also')} ${alt.code}', style: theme.textTheme.bodyMedium),
       if (elsewhere.isNotEmpty) Text('${_s('also_at')} ${elsewhere.join(', ')}', style: theme.textTheme.bodyMedium),
       if (goesNegative)
         Padding(

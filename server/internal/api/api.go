@@ -212,6 +212,12 @@ func (s *Server) parseVoice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "speech recognition failed")
 		return
 	}
+	if s.Parser == nil && text != "" {
+		// Speech works but nothing can read the phrase yet: show the operator what
+		// was heard and let them fill the form by hand.
+		writeJSON(w, http.StatusOK, DraftResponse{Transcript: text, SKUs: []store.SKU{}})
+		return
+	}
 	s.draft(w, r, text)
 }
 

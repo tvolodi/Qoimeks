@@ -30,8 +30,9 @@ func (t stubTranscriber) Transcribe(context.Context, []byte, string, string) (st
 }
 
 type client struct {
-	t   *testing.T
-	url string
+	t     *testing.T
+	url   string
+	store *store.Store
 }
 
 func (c client) do(method, path string, body any, wantStatus int, out any) {
@@ -62,7 +63,7 @@ func setup(t *testing.T, srv *Server) (client, map[string]int64, map[string]int6
 	srv.Store = storetest.New(t)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	c := client{t, ts.URL}
+	c := client{t, ts.URL, srv.Store}
 	var cat store.Catalog
 	c.do("GET", "/api/catalog", nil, 200, &cat)
 	skus, locs := map[string]int64{}, map[string]int64{}
@@ -215,4 +216,60 @@ func TestVoiceWithoutServicesSaysSo(t *testing.T) {
 	c, _, _ := setup(t, &Server{})
 	c.do("POST", "/api/parse", map[string]string{"text": "приход"}, 503, nil)
 	c.do("POST", "/api/voice", nil, 503, nil)
+}
+
+func TestImportLoadsCatalogAndOpeningBalancesOnce(t *testing.T) {
+	c, _, _ := setup(t, &Server{})
+	st := c.store
+	ctx := context.Background()
+	locations := []store.ImportLocation{{Code: "RI2", Name: "Справа I 2"}, {Code: "RK2"}, {Code: "A-01"}}
+	skus := []store.ImportSKU{
+		{Code: "X-1", Name: "X-1 Замок", Home: "RI2", Alt: "RK2", Stock: []store.ImportStock{{Location: "RI2", Qty: 10}, {Location: "RK2", Qty: 4}}},
+		{Code: "X-2", Name: "X-2 Кнопка", Home: "RK2", Stock: []store.ImportStock{{Location: "RK2", Qty: 0}}},
+		{Code: "NUT-M8", Name: "Гайка М8 (новое имя)", Home: "A-01", Stock: []store.ImportStock{{Location: "A-01", Qty: 3}}},
+	}
+	res, err := st.Import(ctx, locations, skus, true, "импорт")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != (store.ImportResult{LocationsCreated: 2, SKUsCreated: 2, SKUsUpdated: 1, BalancesPosted: 3}) {
+		t.Fatalf("first import: %+v", res)
+	}
+
+	var cat store.Catalog
+	c.do("GET", "/api/catalog", nil, 200, &cat)
+	var x1 store.SKU
+	codes := map[int64]string{}
+	for _, l := range cat.Locations {
+		codes[l.ID] = l.Code
+	}
+	for _, s := range cat.SKUs {
+		if s.Code == "X-1" {
+			x1 = s
+		}
+		if s.Code == "NUT-M8" && s.Name != "Гайка М8 (новое имя)" {
+			t.Fatalf("name not updated: %+v", s)
+		}
+	}
+	if x1.LocationID == nil || codes[*x1.LocationID] != "RI2" || x1.AltLocationID == nil || codes[*x1.AltLocationID] != "RK2" {
+		t.Fatalf("X-1 places: %+v", x1)
+	}
+
+	// An operator issues 3; importing next week's file must not put them back.
+	c.do("POST", "/api/movements", store.NewMovement{
+		ID: uuid.New(), Kind: "issue", SKUID: x1.ID, LocationID: *x1.LocationID, Qty: 3, Operator: "Айгуль",
+	}, 201, nil)
+	skus[0].Stock[0].Qty = 99
+	res, err = st.Import(ctx, locations, skus, true, "импорт")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != (store.ImportResult{SKUsUpdated: 3}) {
+		t.Fatalf("second import: %+v", res)
+	}
+	var current []store.Balance
+	c.do("GET", "/api/balances?sku_id="+itoa(x1.ID), nil, 200, &current)
+	if len(current) != 2 || current[0].LocationCode != "RI2" || current[0].Qty != 7 || current[1].Qty != 4 {
+		t.Fatalf("balances: %+v", current)
+	}
 }

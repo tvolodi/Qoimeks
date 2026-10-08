@@ -21,7 +21,7 @@ class FakeVoice implements VoiceCapture {
   void dispose() {}
 }
 
-const _nut8 = {'id': 1, 'code': 'NUT-M8', 'name': 'Гайка М8', 'unit': 'шт'};
+const _nut8 = {'id': 1, 'code': 'NUT-M8', 'name': 'Гайка М8', 'unit': 'шт', 'location_id': 10, 'alt_location_id': 11};
 const _nut10 = {'id': 2, 'code': 'NUT-M10', 'name': 'Гайка М10', 'unit': 'шт'};
 const _a01 = {'id': 10, 'code': 'A-01', 'name': 'Ряд A'};
 const _b02 = {'id': 11, 'code': 'B-02', 'name': 'Ряд B'};
@@ -102,6 +102,16 @@ void main() {
     await tester.tap(find.text('Гайка М8'));
     await tester.pumpAndSettle();
 
+    // The SKU's usual place is offered straight away.
+    expect(find.text('A-01'), findsOneWidget);
+    expect(find.text('Смотреть также: B-02'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('location')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('picker_search')), 'b02');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('B-02'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('location')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('picker_search')), 'a01');

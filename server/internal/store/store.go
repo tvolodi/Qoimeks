@@ -114,6 +114,9 @@ type SKU struct {
 	Name    string `json:"name"`
 	Unit    string `json:"unit"`
 	Barcode string `json:"barcode,omitempty"`
+	// LocationID is where the SKU normally lives; AltLocationID is a second place to look.
+	LocationID    *int64 `json:"location_id,omitempty"`
+	AltLocationID *int64 `json:"alt_location_id,omitempty"`
 }
 
 type Location struct {
@@ -130,13 +133,13 @@ type Catalog struct {
 // Catalog returns the active SKUs and locations, each sorted by code.
 func (s *Store) Catalog(ctx context.Context) (Catalog, error) {
 	c := Catalog{SKUs: []SKU{}, Locations: []Location{}}
-	rows, err := s.pool.Query(ctx, `select id, code, name, unit, coalesce(barcode, '') from skus where active order by code`)
+	rows, err := s.pool.Query(ctx, `select id, code, name, unit, coalesce(barcode, ''), location_id, alt_location_id from skus where active order by code`)
 	if err != nil {
 		return c, err
 	}
 	c.SKUs, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (SKU, error) {
 		var v SKU
-		return v, r.Scan(&v.ID, &v.Code, &v.Name, &v.Unit, &v.Barcode)
+		return v, r.Scan(&v.ID, &v.Code, &v.Name, &v.Unit, &v.Barcode, &v.LocationID, &v.AltLocationID)
 	})
 	if err != nil {
 		return c, err

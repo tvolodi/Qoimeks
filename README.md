@@ -13,7 +13,7 @@ posts it.
 docker compose up -d --wait          # PostgreSQL on 127.0.0.1:5433
 
 cd server
-SEED_DEMO=1 go run ./cmd/server      # http://localhost:8080, demo catalog on first start
+SEED_DEMO=1 go run ./cmd/server      # http://localhost:8080; SEED_DEMO loads a demo catalog into an empty database
 
 cd ../mobile
 flutter run -d chrome                # or a connected phone
@@ -31,12 +31,31 @@ On first launch the app asks for the operator's name and the server address
 | `SEED_DEMO` | — | `1` loads a demo catalog into an empty database |
 | `ANTHROPIC_API_KEY` | — | turns a spoken phrase into a draft operation |
 | `LLM_MODEL` | `claude-opus-5-5` | model used for that |
-| `STT_API_KEY` | — | speech-to-text service key |
-| `STT_BASE_URL` | `https://api.openai.com/v1` | any service with an OpenAI-style `/audio/transcriptions` |
-| `STT_MODEL` | `gpt-4o-transcribe` | speech model |
+| `ELEVENLABS_API_KEY` | — | speech-to-text with ElevenLabs Scribe (`elevenlab_api_key` is accepted too) |
+| `STT_API_KEY`, `STT_BASE_URL` | — | instead of ElevenLabs: any service with an OpenAI-style `/audio/transcriptions` |
+| `STT_MODEL` | `scribe_v2` / `gpt-4o-transcribe` | speech model |
 
-Without the two keys the app still works from the keyboard; the microphone button
-reports that voice input is not configured.
+Settings can also be put in a `.env` file in the repository root or in `server/`.
+
+Without a speech key the app works from the keyboard only. With a speech key but no
+`ANTHROPIC_API_KEY`, the microphone shows what was heard and the operator fills the form by hand.
+
+## Loading the catalog from Excel
+
+The bookkeepers' weekly workbook (article, name, closing balance, zone, rack, shelf,
+second place) is loaded with:
+
+```sh
+cd server
+go run ./cmd/import -dry-run path/to/stock.xlsx    # read and report only
+go run ./cmd/import -balances path/to/stock.xlsx   # save catalog and opening balances
+```
+
+The first sheet (the newest week) is read unless `-sheet` names another. A place is
+written as zone + rack + shelf, e.g. `RI2`. Running the import again updates names and
+places and adds new articles; `-balances` only records stock for an article and place
+the ledger has never seen, so balances operators already work with are not overwritten.
+Rows the importer cannot trust are listed and skipped, never guessed.
 
 ## How data is stored
 
