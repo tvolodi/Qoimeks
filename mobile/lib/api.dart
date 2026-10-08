@@ -148,11 +148,13 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
-  ApiClient(String baseUrl, {http.Client? client})
+  ApiClient(String baseUrl, {String accessCode = '', http.Client? client})
       : _base = baseUrl.trim().replaceAll(RegExp(r'/+$'), ''),
+        _auth = accessCode.isEmpty ? const {} : {'Authorization': 'Bearer $accessCode'},
         _http = client ?? http.Client();
 
   final String _base;
+  final Map<String, String> _auth;
   final http.Client _http;
 
   Future<dynamic> _send(Future<http.Response> Function() request) async {
@@ -174,11 +176,11 @@ class ApiClient {
     return body;
   }
 
-  Future<dynamic> _get(String path) => _send(() => _http.get(Uri.parse('$_base$path')));
+  Future<dynamic> _get(String path) => _send(() => _http.get(Uri.parse('$_base$path'), headers: _auth));
 
   Future<dynamic> _post(String path, Map<String, dynamic> body) => _send(() => _http.post(
         Uri.parse('$_base$path'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', ..._auth},
         body: jsonEncode(body),
       ));
 
@@ -236,6 +238,7 @@ class ApiClient {
   Future<Draft> voice(Uint8List audio, String filename, String lang) async {
     final j = await _send(() async {
       final req = http.MultipartRequest('POST', Uri.parse('$_base/api/voice'))
+        ..headers.addAll(_auth)
         ..fields['lang'] = lang
         ..files.add(http.MultipartFile.fromBytes('audio', audio, filename: filename));
       return http.Response.fromStream(await _http.send(req));

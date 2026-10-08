@@ -1,0 +1,51 @@
+# Production stack. Run from this directory with a .env beside it (see .env.example).
+name: qoimeks-prod
+
+services:
+  app:
+    build:
+      context: ../server
+    image: qoimeks-prod:latest
+    container_name: qoimeks-prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://qoimeks:${POSTGRES_PASSWORD}@db:5432/qoimeks?sslmode=disable
+      LISTEN_ADDR: ":8080"
+    ports:
+      # Loopback only: nginx on the host is the public entrance.
+      - "127.0.0.1:${HOST_PORT:-3113}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgres:16-alpine
+    container_name: qoimeks-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qoimeks
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: qoimeks
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qoimeks"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  dbdata:

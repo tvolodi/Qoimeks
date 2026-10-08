@@ -26,6 +26,9 @@ const _ru = {
   'history': 'История',
   'settings': 'Настройки',
   'server': 'Адрес сервера',
+  'access_code': 'Код доступа',
+  'access_code_hint': 'Если сервер его требует',
+  'err_access': 'Неверный код доступа. Проверьте настройки',
   'operator': 'Оператор (ваше имя)',
   'language': 'Язык',
   'save': 'Сохранить',
@@ -74,6 +77,9 @@ const _kk = {
   'history': 'Тарих',
   'settings': 'Баптаулар',
   'server': 'Сервер мекенжайы',
+  'access_code': 'Кіру коды',
+  'access_code_hint': 'Сервер талап етсе',
+  'err_access': 'Кіру коды қате. Баптауларды тексеріңіз',
   'operator': 'Оператор (атыңыз)',
   'language': 'Тіл',
   'save': 'Сақтау',
@@ -112,6 +118,7 @@ class Strings {
     if (e is! ApiException) return '${call('err_generic')}: $e';
     return switch (e.status) {
       0 => call('err_network'),
+      401 => call('err_access'),
       409 => call('err_already_posted'),
       422 => call('err_silence'),
       502 => call('err_not_understood'),

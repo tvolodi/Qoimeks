@@ -38,7 +38,10 @@ func main() {
 		}
 	}
 
-	srv := &api.Server{Store: st}
+	srv := &api.Server{Store: st, AccessToken: os.Getenv("ACCESS_TOKEN")}
+	if srv.AccessToken == "" {
+		slog.Warn("ACCESS_TOKEN is not set: anyone who can reach this server can use it")
+	}
 	// The provider is named by LLM_PROVIDER, or is the first one whose key is present.
 	provider := os.Getenv("LLM_PROVIDER")
 	if provider == "" {

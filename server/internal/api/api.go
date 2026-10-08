@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -27,6 +28,9 @@ type Server struct {
 	// the app then works from the keyboard only.
 	Parser      parse.Parser
 	Transcriber stt.Transcriber
+	// AccessToken, when set, must accompany every /api/ request. Leave it empty
+	// only where the network itself keeps strangers out.
+	AccessToken string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -39,15 +43,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/movements/{id}/reverse", s.reverseMovement)
 	mux.HandleFunc("POST /api/parse", s.parseText)
 	mux.HandleFunc("POST /api/voice", s.parseVoice)
-	return cors(mux)
+	return cors(s.requireToken(mux))
+}
+
+func (s *Server) requireToken(next http.Handler) http.Handler {
+	if s.AccessToken == "" {
+		return next
+	}
+	want := []byte("Bearer " + s.AccessToken)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := []byte(r.Header.Get("Authorization"))
+		if strings.HasPrefix(r.URL.Path, "/api/") && subtle.ConstantTimeCompare(got, want) != 1 {
+			writeError(w, http.StatusUnauthorized, "access code is missing or wrong")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // cors lets the web build of the app, served from another origin, call the API.
-// There is no authentication to protect: the server is reachable only inside the VPN.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

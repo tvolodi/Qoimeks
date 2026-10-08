@@ -31,6 +31,7 @@ class FakeServer {
   Map<String, dynamic> draft = {};
   int postStatus = 201;
   final posted = <Map<String, dynamic>>[];
+  final authHeaders = <String?>{};
 
   http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
         utf8.encode(jsonEncode(body)),
@@ -39,6 +40,7 @@ class FakeServer {
       );
 
   late final client = MockClient((req) async {
+    authHeaders.add(req.headers['Authorization']);
     switch (req.url.path) {
       case '/api/catalog':
         return _json({
@@ -79,7 +81,7 @@ Future<void> pumpForm(WidgetTester tester, FakeServer server) async {
   await tester.pumpWidget(MaterialApp(
     home: OperationScreen(
       settings: AppSettings(serverUrl: 'http://server', operator: 'Айгуль'),
-      api: ApiClient('http://server', client: server.client),
+      api: ApiClient('http://server', accessCode: 'code-1', client: server.client),
       voice: FakeVoice(),
     ),
   ));
@@ -175,6 +177,8 @@ void main() {
     expect(body['qty'], 7);
     expect(body['source'], 'voice');
     expect(body['transcript'], contains('переместил'));
+    // Catalog, balances, voice and post all carried the access code.
+    expect(server.authHeaders, {'Bearer code-1'});
   });
 
   testWidgets('when several SKUs fit, the operator has to choose one', (tester) async {

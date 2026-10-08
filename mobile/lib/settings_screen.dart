@@ -18,12 +18,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final _server = TextEditingController(
     text: widget.settings.serverUrl.isEmpty ? 'http://' : widget.settings.serverUrl,
   );
+  late final _accessCode = TextEditingController(text: widget.settings.accessCode);
   late final _operator = TextEditingController(text: widget.settings.operator);
   late String _lang = widget.settings.lang;
 
   @override
   void dispose() {
     _server.dispose();
+    _accessCode.dispose();
     _operator.dispose();
     super.dispose();
   }
@@ -31,7 +33,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
     final navigator = Navigator.of(context);
-    await widget.settings.update(serverUrl: _server.text, operator: _operator.text, lang: _lang);
+    await widget.settings.update(
+      serverUrl: _server.text,
+      accessCode: _accessCode.text,
+      operator: _operator.text,
+      lang: _lang,
+    );
     if (!widget.firstRun) navigator.pop();
   }
 
@@ -78,6 +85,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final uri = Uri.tryParse((v ?? '').trim());
                 return uri != null && uri.host.isNotEmpty ? null : s('required');
               },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              key: const Key('access_code'),
+              controller: _accessCode,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: s('access_code'),
+                helperText: s('access_code_hint'),
+                border: const OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 24),
             SizedBox(

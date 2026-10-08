@@ -28,6 +28,7 @@ On first launch the app asks for the operator's name and the server address
 |---|---|---|
 | `DATABASE_URL` | `postgres://qoimeks:qoimeks@127.0.0.1:5433/qoimeks` | PostgreSQL |
 | `LISTEN_ADDR` | `:8080` | HTTP address |
+| `ACCESS_TOKEN` | — | shared access code every app must send; without it anyone who can reach the server can use it |
 | `SEED_DEMO` | — | `1` loads a demo catalog into an empty database |
 | `LLM_PROVIDER` | first provider whose key is set | who turns a spoken phrase into a draft operation, see below |
 | `LLM_MODEL` | per provider | model used for that |
@@ -73,6 +74,30 @@ written as zone + rack + shelf, e.g. `RI2`. Running the import again updates nam
 places and adds new articles; `-balances` only records stock for an article and place
 the ledger has never seen, so balances operators already work with are not overwritten.
 Rows the importer cannot trust are listed and skipped, never guessed.
+
+## Access
+
+There are no user accounts. The server has one shared access code (`ACCESS_TOKEN`), and each
+operator enters it once in the app's settings together with their name. The name is what
+appears in the history; the code only decides who may use the server at all. To cut off
+access, change the code on the server and give the new one to the operators.
+
+## Production
+
+`deploy/` holds the production stack: the server and its own PostgreSQL in Docker Compose,
+published on a loopback port for a reverse proxy that adds HTTPS.
+
+```sh
+cd deploy
+cp .env.example .env && chmod 600 .env    # fill in the values
+./redeploy-prod.sh                        # pull, build, restart, wait for /healthz
+```
+
+Loading the catalog there (the folder with the workbook is mounted read-only):
+
+```sh
+docker compose -f docker-compose.prod.yml run --rm -v /path/to/folder:/data:ro     --entrypoint qoimeks-import app -balances /data/stock.xlsx
+```
 
 ## How data is stored
 

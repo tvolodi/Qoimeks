@@ -30,10 +30,10 @@ class QoimeksApp extends StatelessWidget {
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: settings.isComplete
             ? OperationScreen(
-                // A new server address means a new catalog: rebuild the form.
-                key: ValueKey(settings.serverUrl),
+                // A new server address or access code means a new catalog: rebuild the form.
+                key: ValueKey('${settings.serverUrl} ${settings.accessCode}'),
                 settings: settings,
-                api: ApiClient(settings.serverUrl),
+                api: ApiClient(settings.serverUrl, accessCode: settings.accessCode),
                 voice: MicrophoneCapture(),
               )
             : SettingsScreen(settings: settings, firstRun: true),

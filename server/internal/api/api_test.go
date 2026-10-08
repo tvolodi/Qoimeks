@@ -33,6 +33,7 @@ type client struct {
 	t     *testing.T
 	url   string
 	store *store.Store
+	token string
 }
 
 func (c client) do(method, path string, body any, wantStatus int, out any) {
@@ -42,6 +43,9 @@ func (c client) do(method, path string, body any, wantStatus int, out any) {
 		json.NewEncoder(&buf).Encode(body)
 	}
 	req, _ := http.NewRequest(method, c.url+path, &buf)
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
@@ -63,7 +67,7 @@ func setup(t *testing.T, srv *Server) (client, map[string]int64, map[string]int6
 	srv.Store = storetest.New(t)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	c := client{t, ts.URL, srv.Store}
+	c := client{t, ts.URL, srv.Store, srv.AccessToken}
 	var cat store.Catalog
 	c.do("GET", "/api/catalog", nil, 200, &cat)
 	skus, locs := map[string]int64{}, map[string]int64{}
@@ -271,5 +275,36 @@ func TestImportLoadsCatalogAndOpeningBalancesOnce(t *testing.T) {
 	c.do("GET", "/api/balances?sku_id="+itoa(x1.ID), nil, 200, &current)
 	if len(current) != 2 || current[0].LocationCode != "RI2" || current[0].Qty != 7 || current[1].Qty != 4 {
 		t.Fatalf("balances: %+v", current)
+	}
+}
+
+func TestAccessToken(t *testing.T) {
+	c, _, _ := setup(t, &Server{AccessToken: "s3cret"})
+	get := func(path, auth string) int {
+		req, _ := http.NewRequest("GET", c.url+path, nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for _, tc := range []struct {
+		path, auth string
+		want       int
+	}{
+		{"/api/catalog", "Bearer s3cret", 200},
+		{"/api/catalog", "", 401},
+		{"/api/catalog", "Bearer wrong", 401},
+		{"/api/catalog", "s3cret", 401},
+		{"/api/movements", "", 401},
+		{"/healthz", "", 200},
+	} {
+		if got := get(tc.path, tc.auth); got != tc.want {
+			t.Errorf("%s with %q: %d, want %d", tc.path, tc.auth, got, tc.want)
+		}
 	}
 }
