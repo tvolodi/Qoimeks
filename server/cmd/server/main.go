@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"qoimeks/server/internal/api"
@@ -38,10 +39,32 @@ func main() {
 	}
 
 	srv := &api.Server{Store: st}
-	if os.Getenv("ANTHROPIC_API_KEY") != "" {
-		srv.Parser = parse.NewClaude(config.Get("claude-opus-5-5", "LLM_MODEL"))
+	// The provider is named by LLM_PROVIDER, or is the first one whose key is present.
+	provider := os.Getenv("LLM_PROVIDER")
+	if provider == "" {
+		for _, name := range []string{"anthropic", "openai", "deepseek", "minimax"} {
+			if os.Getenv(parse.Providers[name].KeyVar) != "" {
+				provider = name
+				break
+			}
+		}
+	}
+	if provider == "" {
+		slog.Warn("no LLM provider configured: spoken phrases are shown but not turned into operations")
 	} else {
-		slog.Warn("ANTHROPIC_API_KEY is not set: voice and phrase parsing are disabled")
+		parser, label, err := parse.New(parse.Settings{
+			Provider: provider,
+			APIKey:   config.Get("", "LLM_API_KEY", parse.Providers[strings.ToLower(provider)].KeyVar),
+			BaseURL:  os.Getenv("LLM_BASE_URL"),
+			Model:    os.Getenv("LLM_MODEL"),
+			JSONMode: os.Getenv("LLM_JSON_MODE"),
+		})
+		if err != nil {
+			slog.Error("LLM configuration", "err", err)
+			os.Exit(1)
+		}
+		srv.Parser = parser
+		slog.Info("phrases are parsed by", "llm", label)
 	}
 	eleven := config.Get("", "ELEVENLABS_API_KEY", "ELEVENLAB_API_KEY", "elevenlabs_api_key", "elevenlab_api_key")
 	sttKey, sttURL := os.Getenv("STT_API_KEY"), os.Getenv("STT_BASE_URL")

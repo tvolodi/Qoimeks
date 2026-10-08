@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"qoimeks/server/internal/store"
 )
@@ -96,9 +97,8 @@ type Claude struct {
 	model  string
 }
 
-// NewClaude reads credentials from the environment (ANTHROPIC_API_KEY).
-func NewClaude(model string) *Claude {
-	return &Claude{client: anthropic.NewClient(), model: model}
+func NewClaude(apiKey, model string) *Claude {
+	return &Claude{client: anthropic.NewClient(option.WithAPIKey(apiKey)), model: model}
 }
 
 func (p *Claude) Parse(ctx context.Context, catalog store.Catalog, text string) (Draft, error) {
