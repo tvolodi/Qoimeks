@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: qoimeks
+      POSTGRES_PASSWORD: qoimeks
+      POSTGRES_DB: qoimeks
+    ports:
+      - "5433:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qoimeks"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  dbdata:
