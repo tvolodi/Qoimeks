@@ -11,6 +11,7 @@ const DefaultDatabaseURL = "postgres://qoimeks:qoimeks@127.0.0.1:5433/qoimeks"
 
 // LoadDotEnv sets variables from the first of the given files that exists.
 // Lines are KEY=VALUE; variables already present in the environment win.
+// Each name is also set in upper case, so "xai_api_key" is found as XAI_API_KEY.
 func LoadDotEnv(paths ...string) {
 	for _, path := range paths {
 		f, err := os.Open(path)
@@ -27,8 +28,10 @@ func LoadDotEnv(paths ...string) {
 			}
 			key = strings.TrimSpace(strings.TrimPrefix(key, "export "))
 			value = strings.Trim(strings.TrimSpace(value), `"'`)
-			if _, set := os.LookupEnv(key); !set {
-				os.Setenv(key, value)
+			for _, name := range []string{key, strings.ToUpper(key)} {
+				if _, set := os.LookupEnv(name); !set {
+					os.Setenv(name, value)
+				}
 			}
 		}
 		return

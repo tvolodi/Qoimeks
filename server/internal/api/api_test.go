@@ -192,7 +192,7 @@ func TestVoiceDraftIsCheckedAgainstCatalog(t *testing.T) {
 		Transcriber: stubTranscriber{"переместил пятнадцать гаек из а один в бэ два"},
 		Parser: stubParser{parse.Draft{
 			Kind: "transfer", SKUCodes: []string{"NUT-M8", "NO-SUCH", "NUT-M10", "NUT-M8"},
-			LocationCode: "A-01", ToLocationCode: "B-02", Qty: &qty,
+			LocationWords: "из а один", LocationCode: "A-01", ToLocationWords: "в бэ два", ToLocationCode: "B-02", Qty: &qty,
 		}},
 	})
 	var body bytes.Buffer
@@ -305,6 +305,24 @@ func TestAccessToken(t *testing.T) {
 	} {
 		if got := get(tc.path, tc.auth); got != tc.want {
 			t.Errorf("%s with %q: %d, want %d", tc.path, tc.auth, got, tc.want)
+		}
+	}
+}
+
+func TestLocationTheOperatorDidNotSayIsDropped(t *testing.T) {
+	cat := store.Catalog{Locations: []store.Location{{ID: 1, Code: "LE2"}, {ID: 2, Code: "LN2"}}}
+	text := "расход кнопка выхода двадцать шесть штук"
+	for _, tc := range []struct {
+		words string
+		want  bool
+	}{
+		{"", false},               // no quote at all
+		{"слева е два", false},    // a quote that is not in the phrase
+		{"Двадцать шесть ", true}, // quoted from the phrase, case and spaces aside
+	} {
+		d := resolve(cat, text, parse.Draft{Kind: "issue", LocationWords: tc.words, LocationCode: "LE2"})
+		if (d.Location != nil) != tc.want {
+			t.Errorf("words %q: location kept = %v, want %v", tc.words, d.Location != nil, tc.want)
 		}
 	}
 }

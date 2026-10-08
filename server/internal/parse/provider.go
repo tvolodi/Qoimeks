@@ -20,6 +20,7 @@ var Providers = map[string]Provider{
 	"openai":    {BaseURL: "https://api.openai.com/v1", Model: "gpt-4o-mini", JSONMode: JSONSchema, KeyVar: "OPENAI_API_KEY"},
 	"deepseek":  {BaseURL: "https://api.deepseek.com", Model: "deepseek-v4-flash", JSONMode: JSONObject, KeyVar: "DEEPSEEK_API_KEY"},
 	"minimax":   {BaseURL: "https://api.minimax.io/v1", Model: "MiniMax-M2.5", JSONMode: JSONPrompt, KeyVar: "MINIMAX_API_KEY"},
+	"xai":       {BaseURL: "https://api.x.ai/v1", Model: "grok-4.20-0309-non-reasoning", JSONMode: JSONSchema, KeyVar: "XAI_API_KEY"},
 	"custom":    {JSONMode: JSONPrompt},
 }
 

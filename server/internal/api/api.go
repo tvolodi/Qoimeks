@@ -282,11 +282,16 @@ func resolve(c store.Catalog, text string, d parse.Draft) DraftResponse {
 			out.SKUs = append(out.SKUs, v)
 		}
 	}
+	// A location counts only if the model can point at the words it came from.
+	spoken := func(words string) bool {
+		words = strings.ToLower(strings.TrimSpace(words))
+		return words != "" && strings.Contains(strings.ToLower(text), words)
+	}
 	for i, v := range c.Locations {
-		if v.Code == d.LocationCode {
+		if v.Code == d.LocationCode && spoken(d.LocationWords) {
 			out.Location = &c.Locations[i]
 		}
-		if v.Code == d.ToLocationCode && out.Kind == store.KindTransfer {
+		if v.Code == d.ToLocationCode && spoken(d.ToLocationWords) && out.Kind == store.KindTransfer {
 			out.ToLocation = &c.Locations[i]
 		}
 	}

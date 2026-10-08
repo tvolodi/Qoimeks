@@ -28,7 +28,9 @@ const jsonInstructions = `
 Answer with one JSON object and nothing else, with exactly these keys:
 {"kind": "receipt" | "issue" | "transfer" | "adjustment" | "unknown",
  "sku_codes": [string, ...],
+ "location_words": string,
  "location_code": string,
+ "to_location_words": string,
  "to_location_code": string,
  "qty": number or null}`
 

@@ -45,7 +45,7 @@ func main() {
 	// The provider is named by LLM_PROVIDER, or is the first one whose key is present.
 	provider := os.Getenv("LLM_PROVIDER")
 	if provider == "" {
-		for _, name := range []string{"anthropic", "openai", "deepseek", "minimax"} {
+		for _, name := range []string{"anthropic", "openai", "xai", "deepseek", "minimax"} {
 			if os.Getenv(parse.Providers[name].KeyVar) != "" {
 				provider = name
 				break

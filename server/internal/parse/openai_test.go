@@ -32,7 +32,7 @@ func fakeChat(t *testing.T, content string, got *map[string]any) *httptest.Serve
 }
 
 func TestOpenAICompatibleReadsAnswersInEveryCommonShape(t *testing.T) {
-	const object = `{"kind":"receipt","sku_codes":["ST-EL350MLD"],"location_code":"LA3","to_location_code":"","qty":80}`
+	const object = `{"kind":"receipt","sku_codes":["ST-EL350MLD"],"location_words":"слева а три","location_code":"LA3","to_location_words":"","to_location_code":"","qty":80}`
 	answers := map[string]string{
 		"bare":      object,
 		"fenced":    "```json\n" + object + "\n```",

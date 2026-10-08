@@ -44,6 +44,7 @@ Settings can also be put in a `.env` file in the repository root or in `server/`
 |---|---|---|
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-5-5` |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| `xai` | `XAI_API_KEY` | `grok-4.20-0309-non-reasoning` |
 | `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-flash` |
 | `minimax` | `MINIMAX_API_KEY` | `MiniMax-M2.5` |
 | `custom` | `LLM_API_KEY` | none, set `LLM_MODEL` and `LLM_BASE_URL` |
