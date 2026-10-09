@@ -232,7 +232,7 @@ func TestImportLoadsCatalogAndOpeningBalancesOnce(t *testing.T) {
 		{Code: "X-2", Name: "X-2 Кнопка", Home: "RK2", Stock: []store.ImportStock{{Location: "RK2", Qty: 0}}},
 		{Code: "NUT-M8", Name: "Гайка М8 (новое имя)", Home: "A-01", Stock: []store.ImportStock{{Location: "A-01", Qty: 3}}},
 	}
-	res, err := st.Import(ctx, locations, skus, true, "импорт")
+	res, err := st.Import(ctx, locations, skus, store.ImportOptions{PostBalances: true, Operator: "импорт"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestImportLoadsCatalogAndOpeningBalancesOnce(t *testing.T) {
 		ID: uuid.New(), Kind: "issue", SKUID: x1.ID, LocationID: *x1.LocationID, Qty: 3, Operator: "Айгуль",
 	}, 201, nil)
 	skus[0].Stock[0].Qty = 99
-	res, err = st.Import(ctx, locations, skus, true, "импорт")
+	res, err = st.Import(ctx, locations, skus, store.ImportOptions{PostBalances: true, Operator: "импорт"})
 	if err != nil {
 		t.Fatal(err)
 	}

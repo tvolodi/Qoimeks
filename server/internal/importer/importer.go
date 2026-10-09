@@ -8,10 +8,12 @@
 //	G another place to look, written together, e.g. "RK2"
 //
 // The file is kept by hand, so everything doubtful is reported instead of guessed.
+// Remarks are in Russian: their readers are the bookkeepers who fix the file.
 package importer
 
 import (
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,8 +26,12 @@ import (
 // NoLocation holds stock whose row gives a balance but no place.
 const NoLocation = "?"
 
+// Skipped starts every remark about a row that was left out of the import.
+const Skipped = "НЕ ЗАГРУЖЕНО"
+
 type Result struct {
 	Sheet     string
+	Sheets    []string // all sheets of the workbook, newest first
 	Locations []store.ImportLocation
 	SKUs      []store.ImportSKU
 	Warnings  []string
@@ -69,24 +75,40 @@ func locationName(zone, rack, shelf string) string {
 	return strings.TrimSpace(name + " " + rack + " " + shelf)
 }
 
-// Parse reads one sheet; an empty sheet name means the first (newest) one.
+// Parse reads one sheet of the workbook at path; an empty sheet name means the
+// first (newest) one.
 func Parse(path, sheet string) (*Result, error) {
 	f, err := excelize.OpenFile(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	return parse(f, sheet)
+}
+
+// ParseReader is Parse for a workbook held in memory.
+func ParseReader(r io.Reader, sheet string) (*Result, error) {
+	f, err := excelize.OpenReader(r)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return parse(f, sheet)
+}
+
+func parse(f *excelize.File, sheet string) (*Result, error) {
+	sheets := f.GetSheetList()
 	if sheet == "" {
-		sheet = f.GetSheetList()[0]
+		sheet = sheets[0]
 	}
 	rows, err := f.GetRows(sheet, excelize.Options{RawCellValue: true})
 	if err != nil {
 		return nil, err
 	}
 
-	res := &Result{Sheet: sheet}
+	res := &Result{Sheet: sheet, Sheets: sheets}
 	warn := func(row int, format string, a ...any) {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("row %d: %s", row, fmt.Sprintf(format, a...)))
+		res.Warnings = append(res.Warnings, fmt.Sprintf("строка %d: %s", row, fmt.Sprintf(format, a...)))
 	}
 	locations := map[string]bool{}
 	addLocation := func(zone, rack, shelf string) string {
@@ -121,7 +143,7 @@ func Parse(path, sheet string) (*Result, error) {
 		if raw := cell(2); raw != "" {
 			v, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
 			if err != nil || v < 0 {
-				warn(n, "%s: balance %q is not a quantity, taken as 0", code, raw)
+				warn(n, "%s: остаток %q не является количеством, принят за 0", code, raw)
 			} else {
 				qty = v
 			}
@@ -130,18 +152,18 @@ func Parse(path, sheet string) (*Result, error) {
 		rawZone, rawRack, shelf := cell(3), cell(4), cell(5)
 		zone, rack := letter(rawZone), letter(rawRack)
 		if zone != strings.ToUpper(rawZone) || rack != strings.ToUpper(rawRack) {
-			warn(n, "%s: place %q %q %s read as %s%s%s", code, rawZone, rawRack, shelf, zone, rack, shelf)
+			warn(n, "%s: место %q %q %s прочитано как %s%s%s", code, rawZone, rawRack, shelf, zone, rack, shelf)
 		}
 		home := ""
 		switch {
 		case len(zone) == 1 && zone >= "A" && zone <= "Z":
 			home = addLocation(zone, rack, shelf)
 		case zone != "" || rack != "" || shelf != "":
-			warn(n, "%s: place %q %q %q has no valid zone, ignored", code, rawZone, rawRack, shelf)
+			warn(n, "%s: в месте %q %q %q не указана зона, место пропущено", code, rawZone, rawRack, shelf)
 		}
 		if home == "" && qty > 0 {
 			home = addLocation(NoLocation, "", "")
-			warn(n, "%s: balance %v but no place, put into %q", code, qty, NoLocation)
+			warn(n, "%s: остаток %v без места, записан в место %q", code, qty, NoLocation)
 		}
 
 		alt := ""
@@ -149,7 +171,7 @@ func Parse(path, sheet string) (*Result, error) {
 			if m := altShape.FindStringSubmatch(lookalikes.Replace(strings.ToUpper(strings.ReplaceAll(raw, " ", "")))); m != nil {
 				alt = addLocation(m[1], m[2], m[3])
 			} else {
-				warn(n, "%s: second place %q is not a place code, ignored", code, raw)
+				warn(n, "%s: второе место %q не похоже на код места, пропущено", code, raw)
 			}
 		}
 
@@ -165,12 +187,12 @@ func Parse(path, sheet string) (*Result, error) {
 			same := strings.EqualFold(first.Name, name) || (namedByCode(first.Name) && namedByCode(name))
 			if !same && namedByCode(name) {
 				// The earlier row carries this article by mistake; this row is the real one.
-				warn(n, "%s: NOT IMPORTED: %q (balance %v). The article belongs to %q", code, first.Name, stockTotal(first.Stock), name)
+				warn(n, "%s: %s: %q (остаток %v). Этот артикул принадлежит товару %q", code, Skipped, first.Name, stockTotal(first.Stock), name)
 				*first = sku
 				continue
 			}
 			if !same {
-				warn(n, "%s: NOT IMPORTED: %q (balance %v). The article is already used for %q", code, name, qty, first.Name)
+				warn(n, "%s: %s: %q (остаток %v). Этот артикул уже занят товаром %q", code, Skipped, name, qty, first.Name)
 				continue
 			}
 			// The same article listed again: stock kept in a second place.
@@ -188,7 +210,7 @@ func Parse(path, sheet string) (*Result, error) {
 		res.SKUs = append(res.SKUs, sku)
 	}
 	if !started {
-		return nil, fmt.Errorf("sheet %q has no header row starting with \"Артикул\"", sheet)
+		return nil, fmt.Errorf("на листе %q нет строки заголовка, начинающейся с «Артикул»", sheet)
 	}
 	return res, nil
 }

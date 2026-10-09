@@ -38,7 +38,7 @@ func main() {
 		}
 	}
 
-	srv := &api.Server{Store: st, AccessToken: os.Getenv("ACCESS_TOKEN")}
+	srv := &api.Server{Store: st, AccessToken: os.Getenv("ACCESS_TOKEN"), AdminToken: os.Getenv("ADMIN_TOKEN")}
 	if srv.AccessToken == "" {
 		slog.Warn("ACCESS_TOKEN is not set: anyone who can reach this server can use it")
 	}

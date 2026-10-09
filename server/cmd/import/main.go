@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"qoimeks/server/internal/config"
 	"qoimeks/server/internal/importer"
@@ -49,7 +50,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "migration failed:", err)
 		os.Exit(1)
 	}
-	out, err := st.Import(ctx, res.Locations, res.SKUs, *balances, "импорт "+res.Sheet)
+	out, err := st.Import(ctx, res.Locations, res.SKUs, store.ImportOptions{
+		PostBalances: *balances,
+		Operator:     "импорт " + res.Sheet,
+		Record: &store.ImportRecord{
+			Who: "command line", Filename: filepath.Base(flag.Arg(0)), Sheet: res.Sheet,
+			WithBalances: *balances, Remarks: len(res.Warnings),
+		},
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "import failed, nothing was changed:", err)
 		os.Exit(1)

@@ -31,6 +31,8 @@ type Server struct {
 	// AccessToken, when set, must accompany every /api/ request. Leave it empty
 	// only where the network itself keeps strangers out.
 	AccessToken string
+	// AdminToken opens the administration page's actions. Empty closes them.
+	AdminToken string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -43,6 +45,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/movements/{id}/reverse", s.reverseMovement)
 	mux.HandleFunc("POST /api/parse", s.parseText)
 	mux.HandleFunc("POST /api/voice", s.parseVoice)
+	s.adminRoutes(mux)
 	return cors(s.requireToken(mux))
 }
 

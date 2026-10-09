@@ -29,6 +29,7 @@ On first launch the app asks for the operator's name and the server address
 | `DATABASE_URL` | `postgres://qoimeks:qoimeks@127.0.0.1:5433/qoimeks` | PostgreSQL |
 | `LISTEN_ADDR` | `:8080` | HTTP address |
 | `ACCESS_TOKEN` | — | shared access code every app must send; without it anyone who can reach the server can use it |
+| `ADMIN_TOKEN` | — | separate code for the administration page; without it the page's actions are closed |
 | `SEED_DEMO` | — | `1` loads a demo catalog into an empty database |
 | `LLM_PROVIDER` | first provider whose key is set | who turns a spoken phrase into a draft operation, see below |
 | `LLM_MODEL` | per provider | model used for that |
@@ -62,19 +63,25 @@ language model, the microphone shows what was heard and the operator fills the f
 ## Loading the catalog from Excel
 
 The bookkeepers' weekly workbook (article, name, closing balance, zone, rack, shelf,
-second place) is loaded with:
+second place) is loaded from the administration page, `/admin/` on the server. It asks for
+the admin code (`ADMIN_TOKEN`, not the access code the phones use) and the person's name,
+then works in two steps: **check** reads the file and shows what would change without
+changing anything, **load** applies exactly the file that was checked. The file is read in
+memory and never stored; who loaded what and when is kept in the history on the same page.
+
+The first sheet (the newest week) is read unless another is chosen. A place is written as
+zone + rack + shelf, e.g. `RI2`. Loading again updates names and places and adds new
+articles; balances are only recorded for an article and place the ledger has never seen,
+so balances operators already work with are not overwritten. Rows the importer cannot
+trust are listed and skipped, never guessed.
+
+The same import exists as a command for emergencies:
 
 ```sh
 cd server
 go run ./cmd/import -dry-run path/to/stock.xlsx    # read and report only
 go run ./cmd/import -balances path/to/stock.xlsx   # save catalog and opening balances
 ```
-
-The first sheet (the newest week) is read unless `-sheet` names another. A place is
-written as zone + rack + shelf, e.g. `RI2`. Running the import again updates names and
-places and adds new articles; `-balances` only records stock for an article and place
-the ledger has never seen, so balances operators already work with are not overwritten.
-Rows the importer cannot trust are listed and skipped, never guessed.
 
 ## Access
 
@@ -94,11 +101,7 @@ cp .env.example .env && chmod 600 .env    # fill in the values
 ./redeploy-prod.sh                        # pull, build, restart, wait for /healthz
 ```
 
-Loading the catalog there (the folder with the workbook is mounted read-only):
-
-```sh
-docker compose -f docker-compose.prod.yml run --rm -v /path/to/folder:/data:ro     --entrypoint qoimeks-import app -balances /data/stock.xlsx
-```
+The catalog is then loaded from `https://<host>/admin/`.
 
 ## How data is stored
 

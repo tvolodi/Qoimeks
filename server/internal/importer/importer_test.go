@@ -87,12 +87,12 @@ func TestParse(t *testing.T) {
 
 	all := strings.Join(res.Warnings, "\n")
 	for _, want := range []string{
-		`row 9: A-4: place "L" "0" 1 read as LO1`,
-		`row 10: A-5: place "С"`,
-		`row 11: A-6: balance 8 but no place`,
-		`row 14: A-8: NOT IMPORTED: "B-9 Чужой товар" (balance 30)`,
-		`row 16: A-9: NOT IMPORTED: "Карта Prox" (balance 2)`,
-		`row 16: A-9: second place "0"`,
+		`строка 9: A-4: место "L" "0" 1 прочитано как LO1`,
+		`строка 10: A-5: место "С"`,
+		`строка 11: A-6: остаток 8 без места`,
+		`строка 14: A-8: НЕ ЗАГРУЖЕНО: "B-9 Чужой товар" (остаток 30)`,
+		`строка 16: A-9: НЕ ЗАГРУЖЕНО: "Карта Prox" (остаток 2)`,
+		`строка 16: A-9: второе место "0"`,
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing remark %q in:\n%s", want, all)

@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qoimeks — администрирование</title>
+<style>
+  :root { --ink: #1c2b2a; --muted: #5f6f6d; --line: #cfd9d7; --accent: #2e6b62; --bad: #a3261f; --bg: #f5f9f8; --card: #fff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  p.lead { color: var(--muted); margin: 0 0 24px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  label { display: block; font-size: 14px; color: var(--muted); margin: 12px 0 4px; }
+  input[type=text], input[type=password], select { width: 100%; padding: 10px 12px; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  input[type=file] { font: inherit; width: 100%; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
+  .check { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; color: var(--ink); font-size: 16px; }
+  .check input { margin-top: 5px; }
+  .hint { color: var(--muted); font-size: 14px; }
+  .actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+  button { font: inherit; padding: 10px 20px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: #fff; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  #message { margin-top: 16px; padding: 12px 14px; border-radius: 8px; display: none; }
+  #message.error { display: block; background: #fbe9e7; color: var(--bad); }
+  #message.ok { display: block; background: #e3f1ee; color: var(--accent); }
+  #report { display: none; margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+  .numbers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 600px) { .numbers { grid-template-columns: repeat(2, 1fr); } }
+  .numbers div { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .numbers b { display: block; font-size: 24px; }
+  .numbers span { color: var(--muted); font-size: 13px; }
+  ul#remarks { margin: 8px 0 0; padding-left: 20px; max-height: 260px; overflow: auto; font-size: 14px; }
+  ul#remarks li.skipped { color: var(--bad); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Qoimeks — администрирование</h1>
+  <p class="lead">Загрузка справочника товаров и мест хранения из Excel-файла остатков.</p>
+
+  <section>
+    <h2>Доступ</h2>
+    <div class="row">
+      <div>
+        <label for="token">Код администратора</label>
+        <input id="token" type="password" autocomplete="off">
+      </div>
+      <div>
+        <label for="who">Ваше имя</label>
+        <input id="who" type="text" autocomplete="name">
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Загрузка файла</h2>
+    <label for="file">Файл Excel (.xlsx, до 12 МБ)</label>
+    <input id="file" type="file" accept=".xlsx">
+    <label for="sheet">Лист</label>
+    <select id="sheet" disabled><option value="">Первый лист (последняя неделя)</option></select>
+    <label class="check">
+      <input id="balances" type="checkbox">
+      <span>Записать остатки из файла<br>
+        <span class="hint">Только для товаров и мест, по которым в системе ещё нет остатка. Остатки, с которыми уже работают операторы, не изменяются.</span>
+      </span>
+    </label>
+    <div class="actions">
+      <button id="check" disabled>Проверить</button>
+      <button id="apply" class="secondary" disabled>Загрузить в систему</button>
+    </div>
+    <div id="message"></div>
+
+    <div id="report">
+      <h2 id="reportTitle"></h2>
+      <div class="numbers">
+        <div><b id="nNew">0</b><span>новых товаров</span></div>
+        <div><b id="nUpdated">0</b><span>обновится товаров</span></div>
+        <div><b id="nLocations">0</b><span>новых мест</span></div>
+        <div><b id="nBalances">0</b><span>остатков будет записано</span></div>
+      </div>
+      <p class="hint" id="fileLine"></p>
+      <div id="remarksBlock">
+        <b>Замечания к файлу</b>
+        <span class="hint">— строки, отмеченные красным, не загружаются; их нужно исправить в файле.</span>
+        <ul id="remarks"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>История загрузок</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Когда</th><th>Кто</th><th>Файл</th><th>Лист</th><th>Новых</th><th>Обновлено</th><th>Мест</th><th>Остатков</th></tr></thead>
+        <tbody id="history"><tr><td colspan="8" class="hint">Введите код администратора</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let checked = null; // {sha256, sheet, balances} of the last successful check
+
+$('token').value = sessionStorage.getItem('adminToken') || '';
+$('who').value = localStorage.getItem('adminName') || '';
+
+function say(text, kind) {
+  $('message').textContent = text;
+  $('message').className = kind || '';
+}
+
+const messages = {
+  401: 'Неверный код администратора.',
+  409: 'Файл изменился после проверки. Проверьте его ещё раз.',
+  413: 'Файл больше 12 МБ.',
+  429: 'Слишком много запросов. Подождите минуту.',
+  503: 'Администрирование не настроено на сервере.',
+};
+
+async function call(path, options) {
+  let resp;
+  try {
+    resp = await fetch(path, { ...options, headers: { Authorization: 'Bearer ' + $('token').value.trim() } });
+  } catch (e) {
+    throw new Error('Нет связи с сервером.');
+  }
+  let body = null;
+  try { body = await resp.json(); } catch (e) { /* not JSON */ }
+  if (!resp.ok) throw new Error(messages[resp.status] || (body && body.error) || ('Ошибка ' + resp.status));
+  return body;
+}
+
+function refreshButtons() {
+  const ready = $('file').files.length === 1 && $('token').value.trim() !== '';
+  $('check').disabled = !ready;
+  const same = checked && checked.sheet === $('sheet').value && checked.balances === $('balances').checked;
+  $('apply').disabled = !(ready && same && $('who').value.trim() !== '');
+}
+
+function invalidate() {
+  checked = null;
+  refreshButtons();
+}
+
+function form(extra) {
+  const data = new FormData();
+  data.append('file', $('file').files[0]);
+  data.append('sheet', $('sheet').value);
+  data.append('balances', $('balances').checked ? 'true' : 'false');
+  for (const [k, v] of Object.entries(extra || {})) data.append(k, v);
+  return data;
+}
+
+function show(r) {
+  $('report').style.display = 'block';
+  $('reportTitle').textContent = r.applied ? 'Загружено' : 'Что изменится';
+  $('nNew').textContent = r.changes.skus_created;
+  $('nUpdated').textContent = r.changes.skus_updated;
+  $('nLocations').textContent = r.changes.locations_created;
+  $('nBalances').textContent = r.changes.balances_posted;
+  $('fileLine').textContent = 'Лист «' + r.sheet + '»: ' + r.skus + ' товаров, ' + r.locations + ' мест хранения.';
+  const list = $('remarks');
+  list.replaceChildren();
+  for (const text of r.remarks) {
+    const li = document.createElement('li');
+    li.textContent = text;
+    if (text.includes('НЕ ЗАГРУЖЕНО')) li.className = 'skipped';
+    list.append(li);
+  }
+  $('remarksBlock').style.display = r.remarks.length ? 'block' : 'none';
+
+  const select = $('sheet');
+  if (select.options.length <= 1) {
+    for (const name of r.sheets) select.add(new Option(name, name));
+    select.disabled = false;
+  }
+  select.value = r.sheet;
+}
+
+async function loadHistory() {
+  if ($('token').value.trim() === '') return;
+  const body = $('history');
+  try {
+    const rows = await call('/admin/api/imports');
+    body.replaceChildren();
+    if (rows.length === 0) {
+      body.innerHTML = '<tr><td colspan="8" class="hint">Загрузок ещё не было</td></tr>';
+    }
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      const cells = [new Date(r.created_at).toLocaleString('ru-RU'), r.who, r.filename, r.sheet,
+        r.skus_created, r.skus_updated, r.locations_created, r.with_balances ? r.balances_posted : '—'];
+      for (const c of cells) { const td = document.createElement('td'); td.textContent = c; tr.append(td); }
+      body.append(tr);
+    }
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="8" class="hint"></td></tr>';
+    body.firstChild.firstChild.textContent = e.message;
+  }
+}
+
+$('check').onclick = async () => {
+  say('Проверяю файл…', 'ok');
+  $('check').disabled = true;
+  try {
+    // A small request first: a wrong code is then refused before the file is sent,
+    // and the browser can show why.
+    await call('/admin/api/imports');
+    const r = await call('/admin/api/import/preview', { method: 'POST', body: form() });
+    show(r);
+    checked = { sha256: r.sha256, sheet: $('sheet').value, balances: $('balances').checked };
+    say('Файл прочитан, в системе ничего не изменено. Посмотрите результат и нажмите «Загрузить в систему».', 'ok');
+    sessionStorage.setItem('adminToken', $('token').value.trim());
+    loadHistory();
+  } catch (e) {
+    say(e.message, 'error');
+  }
+  refreshButtons();
+};
+
+$('apply').onclick = async () => {
+  say('Загружаю…', 'ok');
+  $('apply').disabled = true;
+  try {
+    const r = await call('/admin/api/import/apply', { method: 'POST', body: form({ who: $('who').value.trim(), sha256: checked.sha256 }) });
+    show(r);
+    checked = null;
+    localStorage.setItem('adminName', $('who').value.trim());
+    say('Готово: справочник загружен.', 'ok');
+    loadHistory();
+  } catch (e) {
+    say(e.message, 'error');
+  }
+  refreshButtons();
+};
+
+$('file').onchange = () => {
+  const select = $('sheet');
+  select.length = 1;
+  select.disabled = true;
+  $('report').style.display = 'none';
+  say('');
+  invalidate();
+};
+$('sheet').onchange = invalidate;
+$('balances').onchange = invalidate;
+$('who').oninput = refreshButtons;
+$('token').oninput = refreshButtons;
+$('token').onchange = loadHistory;
+
+refreshButtons();
+loadHistory();
+</script>
+</body>
+</html>

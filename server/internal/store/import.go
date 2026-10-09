@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -28,16 +30,43 @@ type ImportSKU struct {
 }
 
 type ImportResult struct {
-	LocationsCreated int
-	SKUsCreated      int
-	SKUsUpdated      int
-	BalancesPosted   int
+	LocationsCreated int `json:"locations_created"`
+	SKUsCreated      int `json:"skus_created"`
+	SKUsUpdated      int `json:"skus_updated"`
+	BalancesPosted   int `json:"balances_posted"`
 }
 
-// Import upserts the catalog in one transaction. With postBalances it also records
-// the file's quantities as stock counts, but only for SKU/location pairs the ledger
-// knows nothing about yet: balances that operators already work with are never overwritten.
-func (s *Store) Import(ctx context.Context, locations []ImportLocation, skus []ImportSKU, postBalances bool, operator string) (ImportResult, error) {
+// ImportRecord is the audit entry of one import: who loaded which workbook and
+// what it changed. The workbook itself is not kept.
+type ImportRecord struct {
+	ID           int64     `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	Who          string    `json:"who"`
+	Filename     string    `json:"filename"`
+	Sheet        string    `json:"sheet"`
+	SHA256       string    `json:"sha256"`
+	WithBalances bool      `json:"with_balances"`
+	Remarks      int       `json:"remarks"`
+	ImportResult
+}
+
+type ImportOptions struct {
+	// PostBalances also records the file's quantities as stock counts, but only for
+	// SKU/location pairs the ledger knows nothing about yet: balances that operators
+	// already work with are never overwritten.
+	PostBalances bool
+	// DryRun computes the result and then undoes everything.
+	DryRun bool
+	// Operator is the name written on the opening-balance movements.
+	Operator string
+	// Record, when set, is saved as the audit entry of a real import.
+	Record *ImportRecord
+}
+
+var errDryRun = errors.New("dry run")
+
+// Import upserts the catalog in one transaction.
+func (s *Store) Import(ctx context.Context, locations []ImportLocation, skus []ImportSKU, opts ImportOptions) (ImportResult, error) {
 	var res ImportResult
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		for _, l := range locations {
@@ -82,7 +111,7 @@ func (s *Store) Import(ctx context.Context, locations []ImportLocation, skus []I
 			} else {
 				res.SKUsUpdated++
 			}
-			if !postBalances {
+			if !opts.PostBalances {
 				continue
 			}
 			for _, st := range sku.Stock {
@@ -101,7 +130,7 @@ func (s *Store) Import(ctx context.Context, locations []ImportLocation, skus []I
 				if _, err := tx.Exec(ctx, `
 					insert into movements (id, kind, sku_id, location_id, qty, operator, source)
 					values ($1, 'adjustment', $2, $3, $4::numeric, $5, 'import')`,
-					movementID, skuID, *loc, st.Qty, operator); err != nil {
+					movementID, skuID, *loc, st.Qty, opts.Operator); err != nil {
 					return err
 				}
 				qty := st.Qty
@@ -111,7 +140,38 @@ func (s *Store) Import(ctx context.Context, locations []ImportLocation, skus []I
 				res.BalancesPosted++
 			}
 		}
+		if opts.DryRun {
+			return errDryRun
+		}
+		if r := opts.Record; r != nil {
+			_, err := tx.Exec(ctx, `
+				insert into imports (who, filename, sheet, sha256, with_balances, remarks,
+				                     skus_created, skus_updated, locations_created, balances_posted)
+				values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+				r.Who, r.Filename, r.Sheet, r.SHA256, r.WithBalances, r.Remarks,
+				res.SKUsCreated, res.SKUsUpdated, res.LocationsCreated, res.BalancesPosted)
+			return err
+		}
 		return nil
 	})
+	if errors.Is(err, errDryRun) {
+		err = nil
+	}
 	return res, err
+}
+
+// Imports returns the most recent audit entries, newest first.
+func (s *Store) Imports(ctx context.Context, limit int) ([]ImportRecord, error) {
+	rows, err := s.pool.Query(ctx, `
+		select id, created_at, who, filename, sheet, sha256, with_balances, remarks,
+		       skus_created, skus_updated, locations_created, balances_posted
+		from imports order by id desc limit $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ImportRecord, error) {
+		var v ImportRecord
+		return v, r.Scan(&v.ID, &v.CreatedAt, &v.Who, &v.Filename, &v.Sheet, &v.SHA256, &v.WithBalances, &v.Remarks,
+			&v.SKUsCreated, &v.SKUsUpdated, &v.LocationsCreated, &v.BalancesPosted)
+	})
 }
