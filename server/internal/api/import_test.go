@@ -58,19 +58,19 @@ func upload(t *testing.T, url, token string, file []byte, fields map[string]stri
 }
 
 func TestAdminImport(t *testing.T) {
-	c, _, _ := setup(t, &Server{AccessToken: "phone", AdminToken: "boss"})
+	c, _, _ := setup(t, &Server{AccessToken: "phone"})
 	file := workbook(t, [][]any{
 		{"Артикул", "Номенклатура", "Конечный остаток"},
 		{"Z-1", "Z-1 Замок", 10, "R", "I", 2, "RK2"},
 		{"Z-2", "Z-2 Кнопка", 4, "L", "A", 1},
 		{"Z-2", "Совсем другой товар", 9, "L", "A", 2},
 	})
-	preview, apply := c.url+"/admin/api/import/preview", c.url+"/admin/api/import/apply"
+	preview, apply := c.url+"/api/import/preview", c.url+"/api/import/apply"
 	withBalances := map[string]string{"balances": "true"}
 
-	// The phone's access code is not an admin code, and no code is no code.
-	if got := upload(t, preview, "phone", file, withBalances, nil); got != 401 {
-		t.Fatalf("preview with the phone code: %d", got)
+	// Importing needs the access code like everything else under /api/.
+	if got := upload(t, preview, "wrong", file, withBalances, nil); got != 401 {
+		t.Fatalf("preview with a wrong code: %d", got)
 	}
 	if got := upload(t, apply, "", file, withBalances, nil); got != 401 {
 		t.Fatalf("apply without a code: %d", got)
@@ -78,7 +78,7 @@ func TestAdminImport(t *testing.T) {
 
 	// A preview reports the changes and leaves the database alone.
 	var p importResponse
-	if got := upload(t, preview, "boss", file, withBalances, &p); got != 200 {
+	if got := upload(t, preview, "phone", file, withBalances, &p); got != 200 {
 		t.Fatalf("preview: %d", got)
 	}
 	want := store.ImportResult{LocationsCreated: 4, SKUsCreated: 2, BalancesPosted: 2}
@@ -95,25 +95,25 @@ func TestAdminImport(t *testing.T) {
 
 	// Applying needs a name and the checksum of the file that was previewed.
 	fields := map[string]string{"balances": "true", "sha256": p.SHA256}
-	if got := upload(t, apply, "boss", file, fields, nil); got != 400 {
+	if got := upload(t, apply, "phone", file, fields, nil); got != 400 {
 		t.Fatalf("apply without a name: %d", got)
 	}
 	fields["who"] = "Гульнара"
 	other := workbook(t, [][]any{{"Артикул", "Номенклатура"}, {"Z-9", "Z-9 Подмена", 1, "C"}})
-	if got := upload(t, apply, "boss", other, fields, nil); got != 409 {
+	if got := upload(t, apply, "phone", other, fields, nil); got != 409 {
 		t.Fatalf("apply of a different file: %d", got)
 	}
 	var a importResponse
-	if got := upload(t, apply, "boss", file, fields, &a); got != 200 || !a.Applied || a.Changes != want {
+	if got := upload(t, apply, "phone", file, fields, &a); got != 200 || !a.Applied || a.Changes != want {
 		t.Fatalf("apply: %d %+v", got, a)
 	}
 
 	// Loading the same file again changes no balance; both loads are in the history.
-	if got := upload(t, apply, "boss", file, fields, &a); got != 200 || a.Changes != (store.ImportResult{SKUsUpdated: 2}) {
+	if got := upload(t, apply, "phone", file, fields, &a); got != 200 || a.Changes != (store.ImportResult{SKUsUpdated: 2}) {
 		t.Fatalf("second apply: %d %+v", got, a)
 	}
-	req, _ := http.NewRequest("GET", c.url+"/admin/api/imports", nil)
-	req.Header.Set("Authorization", "Bearer boss")
+	req, _ := http.NewRequest("GET", c.url+"/api/imports", nil)
+	req.Header.Set("Authorization", "Bearer phone")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -127,19 +127,17 @@ func TestAdminImport(t *testing.T) {
 	}
 
 	// Not a workbook at all.
-	if got := upload(t, preview, "boss", []byte("hello"), nil, nil); got != 422 {
+	if got := upload(t, preview, "phone", []byte("hello"), nil, nil); got != 422 {
 		t.Fatalf("garbage file: %d", got)
 	}
 }
 
-func TestAdminIsClosedWithoutAToken(t *testing.T) {
+func TestAdminPageMovedToTheRoot(t *testing.T) {
 	c, _, _ := setup(t, &Server{})
-	if got := upload(t, c.url+"/admin/api/import/preview", "", nil, nil, nil); got != 503 {
-		t.Fatalf("preview on a server without an admin token: %d", got)
-	}
-	resp, err := http.Get(c.url + "/admin/")
-	if err != nil || resp.StatusCode != 200 {
-		t.Fatalf("admin page: %v %v", resp, err)
+	client := http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Get(c.url + "/admin/")
+	if err != nil || resp.StatusCode != http.StatusMovedPermanently || resp.Header.Get("Location") != "/" {
+		t.Fatalf("old admin address: %v %v", resp, err)
 	}
 	resp.Body.Close()
 }

@@ -29,7 +29,6 @@ On first launch the app asks for the operator's name and the server address
 | `DATABASE_URL` | `postgres://qoimeks:qoimeks@127.0.0.1:5433/qoimeks` | PostgreSQL |
 | `LISTEN_ADDR` | `:8080` | HTTP address |
 | `ACCESS_TOKEN` | — | shared access code every app must send; without it anyone who can reach the server can use it |
-| `ADMIN_TOKEN` | — | separate code for the administration page; without it the page's actions are closed |
 | `SEED_DEMO` | — | `1` loads a demo catalog into an empty database |
 | `LLM_PROVIDER` | first provider whose key is set | who turns a spoken phrase into a draft operation, see below |
 | `LLM_MODEL` | per provider | model used for that |
@@ -60,14 +59,18 @@ or Claude subscription; it is created and billed separately on the provider's de
 Without a speech key the app works from the keyboard only. With a speech key but no
 language model, the microphone shows what was heard and the operator fills the form by hand.
 
-## Loading the catalog from Excel
+## Stock overview and Excel in the browser
 
-The bookkeepers' weekly workbook (article, name, closing balance, zone, rack, shelf,
-second place) is loaded from the administration page, `/admin/` on the server. It asks for
-the admin code (`ADMIN_TOKEN`, not the access code the phones use) and the person's name,
-then works in two steps: **check** reads the file and shows what would change without
-changing anything, **load** applies exactly the file that was checked. The file is read in
-memory and never stored; who loaded what and when is kept in the history on the same page.
+The server's root page (`http://<server>:8080/`) is the web interface. It asks for the access
+code (`ACCESS_TOKEN`) and the person's name; everyone with the code can use all of it.
+
+- **Balances** by SKU (with the places each is held in) or by place (with the SKUs on it), with search.
+- **Выгрузить в Excel** downloads the current stock as a workbook in the layout the importer
+  reads, one row per SKU and place, so a file can be corrected in Excel and loaded back.
+- **Загрузка из Excel** loads the bookkeepers' weekly workbook (article, name, closing balance,
+  zone, rack, shelf, second place) in two steps: **check** reads the file and shows what would
+  change without changing anything, **load** applies exactly the file that was checked. The file
+  is read in memory and never stored; who loaded what and when is kept in the history.
 
 The first sheet (the newest week) is read unless another is chosen. A place is written as
 zone + rack + shelf, e.g. `RI2`. Loading again updates names and places and adds new
@@ -101,7 +104,7 @@ cp .env.example .env && chmod 600 .env    # fill in the values
 ./redeploy-prod.sh                        # pull, build, restart, wait for /healthz
 ```
 
-The catalog is then loaded from `https://<host>/admin/`.
+The catalog is then loaded from `https://<host>/`.
 
 ## How data is stored
 

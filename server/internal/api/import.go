@@ -3,8 +3,6 @@ package api
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/subtle"
-	_ "embed"
 	"encoding/hex"
 	"io"
 	"log/slog"
@@ -15,37 +13,18 @@ import (
 	"qoimeks/server/internal/store"
 )
 
-//go:embed admin.html
-var adminPage []byte
-
 const maxWorkbookBytes = 12 << 20
 
-func (s *Server) adminRoutes(mux *http.ServeMux) {
+// importRoutes serves loading the bookkeepers' workbook. Everyone who has the
+// access code may load it; it is recorded who did.
+func (s *Server) importRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/import/preview", func(w http.ResponseWriter, r *http.Request) { s.importWorkbook(w, r, false) })
+	mux.HandleFunc("POST /api/import/apply", func(w http.ResponseWriter, r *http.Request) { s.importWorkbook(w, r, true) })
+	mux.HandleFunc("GET /api/imports", s.importHistory)
+	// The page used to live here.
 	mux.HandleFunc("GET /admin/{$}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Write(adminPage)
+		http.Redirect(w, r, "/", http.StatusMovedPermanently)
 	})
-	mux.HandleFunc("POST /admin/api/import/preview", s.admin(func(w http.ResponseWriter, r *http.Request) { s.importWorkbook(w, r, false) }))
-	mux.HandleFunc("POST /admin/api/import/apply", s.admin(func(w http.ResponseWriter, r *http.Request) { s.importWorkbook(w, r, true) }))
-	mux.HandleFunc("GET /admin/api/imports", s.admin(s.importHistory))
-}
-
-// admin guards a route with AdminToken, which is separate from the access code
-// that sits on every phone. Without a configured token the route is closed.
-func (s *Server) admin(next http.HandlerFunc) http.HandlerFunc {
-	want := []byte("Bearer " + s.AdminToken)
-	return func(w http.ResponseWriter, r *http.Request) {
-		if s.AdminToken == "" {
-			writeError(w, http.StatusServiceUnavailable, "administration is not configured on the server")
-			return
-		}
-		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), want) != 1 {
-			writeError(w, http.StatusUnauthorized, "admin code is missing or wrong")
-			return
-		}
-		next(w, r)
-	}
 }
 
 type importResponse struct {
@@ -61,7 +40,7 @@ type importResponse struct {
 
 // importWorkbook reads the uploaded workbook in memory and reports what loading it
 // changes. A preview rolls everything back. Applying needs the checksum of the
-// previewed file, so what gets loaded is exactly what the administrator looked at.
+// previewed file, so what gets loaded is exactly what the person looked at.
 func (s *Server) importWorkbook(w http.ResponseWriter, r *http.Request, apply bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxWorkbookBytes)
 	// Larger than the body limit, so the upload never spills into a temporary file.
