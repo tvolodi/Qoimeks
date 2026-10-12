@@ -26,6 +26,7 @@
   button, a.button { font: inherit; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
   button.secondary, a.button.secondary { background: #fff; color: var(--accent); }
   button:disabled { opacity: .45; cursor: default; }
+  button.small { padding: 4px 10px; font-size: 13px; }
   #message, #importMessage { margin-top: 16px; padding: 12px 14px; border-radius: 8px; display: none; }
   #message.error, #importMessage.error { display: block; background: #fbe9e7; color: var(--bad); }
   #message.ok, #importMessage.ok { display: block; background: #e3f1ee; color: var(--accent); }
@@ -57,7 +58,9 @@
   .numbers b { display: block; font-size: 24px; }
   .numbers span { color: var(--muted); font-size: 13px; }
   ul#remarks { margin: 8px 0 0; padding-left: 20px; max-height: 260px; overflow: auto; font-size: 14px; }
-  ul#remarks li.skipped { color: var(--bad); font-weight: 600; }
+  #changesBlock, #notInFileBlock { margin-top: 16px; }
+  #changesBlock .scroll, #notInFileBlock .scroll { max-height: 320px; overflow: auto; margin-top: 8px; }
+  #changesBlock td.num, #notInFileBlock td.num { text-align: right; white-space: nowrap; }
   #history td { white-space: nowrap; }
 </style>
 </head>
@@ -109,7 +112,7 @@
     <label class="box">
       <input id="balances" type="checkbox">
       <span>Записать остатки из файла<br>
-        <span class="hint">Только для товаров и мест, по которым в системе ещё нет остатка. Остатки, с которыми уже работают операторы, не изменяются.</span>
+        <span class="hint">Остатки в системе заменяются остатками из файла. Каждое расхождение записывается в историю как корректировка. Товары, которых в файле нет, не изменяются.</span>
       </span>
     </label>
     <div class="actions">
@@ -124,23 +127,40 @@
         <div><b id="nNew">0</b><span>новых товаров</span></div>
         <div><b id="nUpdated">0</b><span>обновится товаров</span></div>
         <div><b id="nLocations">0</b><span>новых мест</span></div>
-        <div><b id="nBalances">0</b><span>остатков будет записано</span></div>
+        <div><b id="nBalances">0</b><span id="nBalancesLabel">остатков изменится</span></div>
       </div>
       <p class="hint" id="fileLine"></p>
       <div id="remarksBlock">
         <b>Замечания к файлу</b>
-        <span class="hint">— строки, отмеченные красным, не загружаются; их нужно исправить в файле.</span>
+        <span class="hint">— файл загружается целиком; проверьте эти строки и при необходимости исправьте их в файле.</span>
         <ul id="remarks"></ul>
+      </div>
+      <div id="changesBlock">
+        <b>Изменения остатков</b>
+        <span class="hint">— где остаток в системе отличается от файла.</span>
+        <div class="scroll"><table>
+          <thead><tr><th>Артикул</th><th>Номенклатура</th><th>Место</th><th>Было</th><th>Станет</th><th>Разница</th></tr></thead>
+          <tbody id="changes"></tbody>
+        </table></div>
+      </div>
+      <div id="notInFileBlock">
+        <b>Нет в файле</b>
+        <span class="hint">— у этих товаров есть остаток в системе, но в файле их нет. Остаток не изменяется.</span>
+        <div class="scroll"><table>
+          <thead><tr><th>Артикул</th><th>Номенклатура</th><th>Место</th><th>Остаток</th></tr></thead>
+          <tbody id="notInFile"></tbody>
+        </table></div>
       </div>
     </div>
   </section>
 
   <section>
     <h2>История загрузок</h2>
+    <p class="hint">Отмена загрузки возвращает остатки, которые она изменила. Записи не удаляются: в историю добавляются обратные корректировки, а операции, сделанные после загрузки, сохраняются. Названия и места товаров отмена не меняет.</p>
     <div class="scroll">
       <table>
-        <thead><tr><th>Когда</th><th>Кто</th><th>Файл</th><th>Лист</th><th>Новых</th><th>Обновлено</th><th>Мест</th><th>Остатков</th></tr></thead>
-        <tbody id="history"><tr><td colspan="8" class="hint">Введите код администратора</td></tr></tbody>
+        <thead><tr><th>Когда</th><th>Кто</th><th>Файл</th><th>Лист</th><th>Новых</th><th>Обновлено</th><th>Мест</th><th>Остатков</th><th></th></tr></thead>
+        <tbody id="history"><tr><td colspan="9" class="hint">Введите код администратора</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -359,10 +379,29 @@ function show(r) {
   for (const text of r.remarks) {
     const li = document.createElement('li');
     li.textContent = text;
-    if (text.includes('НЕ ЗАГРУЖЕНО')) li.className = 'skipped';
     list.append(li);
   }
   $('remarksBlock').style.display = r.remarks.length ? 'block' : 'none';
+
+  const num = v => v.toLocaleString('ru-RU');
+  const fill = (block, body, rows, cells) => {
+    $(body).replaceChildren();
+    for (const c of rows) {
+      const tr = document.createElement('tr');
+      for (const v of cells(c)) {
+        const td = document.createElement('td');
+        td.textContent = typeof v === 'number' ? num(v) : v;
+        if (typeof v === 'number') td.className = 'num';
+        tr.append(td);
+      }
+      $(body).append(tr);
+    }
+    $(block).style.display = rows.length ? 'block' : 'none';
+  };
+  $('nBalancesLabel').textContent = r.applied ? 'остатков изменено' : 'остатков изменится';
+  fill('changesBlock', 'changes', r.changes.balance_changes,
+    c => [c.code, c.name, c.location, c.was, c.now, (c.now > c.was ? '+' : '−') + num(Math.abs(c.now - c.was))]);
+  fill('notInFileBlock', 'notInFile', r.changes.not_in_file, c => [c.code, c.name, c.location, c.was]);
 
   const select = $('sheet');
   if (select.options.length <= 1) {
@@ -379,18 +418,46 @@ async function loadHistory() {
     const rows = await callJSON('/api/imports');
     body.replaceChildren();
     if (rows.length === 0) {
-      body.innerHTML = '<tr><td colspan="8" class="hint">Загрузок ещё не было</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="hint">Загрузок ещё не было</td></tr>';
     }
     for (const r of rows) {
       const tr = document.createElement('tr');
       const cells = [new Date(r.created_at).toLocaleString('ru-RU'), r.who, r.filename, r.sheet,
         r.skus_created, r.skus_updated, r.locations_created, r.with_balances ? r.balances_posted : '—'];
       for (const c of cells) { const td = document.createElement('td'); td.textContent = c; tr.append(td); }
+      const last = document.createElement('td');
+      if (r.cancelled) {
+        last.textContent = 'отменена';
+        last.className = 'hint';
+      } else if (r.with_balances && r.balances_posted > 0) {
+        const b = el('button', 'Отменить', 'secondary small');
+        b.onclick = () => cancelImport(r);
+        last.append(b);
+      }
+      tr.append(last);
       body.append(tr);
     }
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="8" class="hint"></td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="hint"></td></tr>';
     body.firstChild.firstChild.textContent = e.message;
+  }
+}
+
+async function cancelImport(r) {
+  const who = $('who').value.trim();
+  if (who === '') {
+    sayImport('Укажите ваше имя: оно записывается в историю.', 'error');
+    return;
+  }
+  const when = new Date(r.created_at).toLocaleString('ru-RU');
+  if (!confirm('Отменить загрузку «' + r.filename + '» от ' + when + '? Будет возвращено остатков: ' + r.balances_posted + '.')) return;
+  try {
+    const res = await callJSON('/api/imports/' + r.id + '/cancel', { method: 'POST', body: JSON.stringify({ who }) });
+    sayImport('Загрузка отменена, возвращено остатков: ' + res.cancelled + '.', 'ok');
+    loadHistory();
+    load();
+  } catch (e) {
+    sayImport(e.message, 'error');
   }
 }
 

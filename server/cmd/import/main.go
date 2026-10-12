@@ -1,6 +1,8 @@
 // Command import loads the bookkeepers' stock workbook into the catalog.
 //
 //	go run ./cmd/import [-sheet 18.09] [-balances] [-dry-run] file.xlsx
+//
+// With -balances the file's quantities replace the ledger's.
 package main
 
 import (
@@ -17,7 +19,7 @@ import (
 
 func main() {
 	sheet := flag.String("sheet", "", "sheet to read (default: the first one, which is the newest week)")
-	balances := flag.Bool("balances", false, "also record the file's balances for SKUs and places the ledger has no stock for yet")
+	balances := flag.Bool("balances", false, "also replace the balances of the file's SKUs with the file's quantities")
 	dryRun := flag.Bool("dry-run", false, "only read the file and report, change nothing")
 	flag.Parse()
 	if flag.NArg() != 1 {
@@ -62,6 +64,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "import failed, nothing was changed:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Saved: %d new SKUs, %d updated, %d new locations, %d opening balances\n",
+	fmt.Printf("Saved: %d new SKUs, %d updated, %d new locations, %d balances changed\n",
 		out.SKUsCreated, out.SKUsUpdated, out.LocationsCreated, out.BalancesPosted)
+	for _, c := range out.Changes {
+		fmt.Printf("  %s at %s: %v -> %v\n", c.Code, c.Location, c.Was, c.Now)
+	}
+	for _, c := range out.NotInFile {
+		fmt.Printf("  %s at %s: %v, not in the file, left as it is\n", c.Code, c.Location, c.Was)
+	}
 }

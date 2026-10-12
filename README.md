@@ -74,16 +74,32 @@ code (`ACCESS_TOKEN`) and the person's name; everyone with the code can use all 
 
 The first sheet (the newest week) is read unless another is chosen. A place is written as
 zone + rack + shelf, e.g. `RI2`. Loading again updates names and places and adds new
-articles; balances are only recorded for an article and place the ledger has never seen,
-so balances operators already work with are not overwritten. Rows the importer cannot
-trust are listed and skipped, never guessed.
+articles.
+
+The bookkeepers' file is the authority on balances. With **Записать остатки из файла** every
+balance that differs from the file is replaced by the file's quantity through a stock-count
+movement (`adjustment`, source `import`), so the history keeps each difference. An article of
+the file is emptied at places the file does not list for it; articles the file does not
+mention are left alone and listed. The check shows all of this before anything changes.
+
+Every movement an import posts carries the import's number, so a wrong load can be taken back
+as a whole: **Отменить** in the history reverses each of its balance changes. Nothing is
+deleted — the ledger is append-only — and movements posted after the import stay. Names and
+places the import wrote into the catalog are not reverted.
+
+A balance typed as text is read whatever its decimal sign: `1,5`, `1.5`, `1 250,5`, `1.250,75`
+and `1,250.75` all work, and a single comma or dot is always the decimal sign (`1,000` is one,
+as 1C writes it). A balance that is not a number leaves that article's balances untouched.
+
+An article is not unique in the file: its rows are added up by place. Rows that repeat an
+article under another name, or repeat the same place, are loaded and remarked on.
 
 The same import exists as a command for emergencies:
 
 ```sh
 cd server
 go run ./cmd/import -dry-run path/to/stock.xlsx    # read and report only
-go run ./cmd/import -balances path/to/stock.xlsx   # save catalog and opening balances
+go run ./cmd/import -balances path/to/stock.xlsx   # save catalog and replace balances
 ```
 
 ## Access

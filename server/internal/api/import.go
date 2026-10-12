@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"qoimeks/server/internal/importer"
@@ -21,6 +23,7 @@ func (s *Server) importRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/import/preview", func(w http.ResponseWriter, r *http.Request) { s.importWorkbook(w, r, false) })
 	mux.HandleFunc("POST /api/import/apply", func(w http.ResponseWriter, r *http.Request) { s.importWorkbook(w, r, true) })
 	mux.HandleFunc("GET /api/imports", s.importHistory)
+	mux.HandleFunc("POST /api/imports/{id}/cancel", s.cancelImport)
 	// The page used to live here.
 	mux.HandleFunc("GET /admin/{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusMovedPermanently)
@@ -35,7 +38,7 @@ type importResponse struct {
 	SKUs      int                `json:"skus"`
 	Locations int                `json:"locations"`
 	Remarks   []string           `json:"remarks"`
-	Changes   store.ImportResult `json:"changes"`
+	Changes   store.ImportReport `json:"changes"`
 }
 
 // importWorkbook reads the uploaded workbook in memory and reports what loading it
@@ -90,7 +93,7 @@ func (s *Server) importWorkbook(w http.ResponseWriter, r *http.Request, apply bo
 		return
 	}
 	if apply {
-		slog.Info("workbook imported", "who", who, "file", header.Filename, "sheet", parsed.Sheet, "changes", changes)
+		slog.Info("workbook imported", "who", who, "file", header.Filename, "sheet", parsed.Sheet, "changes", changes.ImportResult)
 	}
 	remarks := parsed.Warnings
 	if remarks == nil {
@@ -112,4 +115,32 @@ func (s *Server) importHistory(w http.ResponseWriter, r *http.Request) {
 		records = []store.ImportRecord{}
 	}
 	writeJSON(w, http.StatusOK, records)
+}
+
+// cancelImport undoes the balance changes of one import, in the name of who asked.
+func (s *Server) cancelImport(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid import id")
+		return
+	}
+	var in struct {
+		Who string `json:"who"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	who := strings.TrimSpace(in.Who)
+	if who == "" {
+		writeError(w, http.StatusBadRequest, "your name is required")
+		return
+	}
+	n, err := s.Store.CancelImport(r.Context(), id, who)
+	if err != nil {
+		storeError(w, r, err)
+		return
+	}
+	slog.Info("import cancelled", "who", who, "import", id, "movements", n)
+	writeJSON(w, http.StatusOK, map[string]int{"cancelled": n})
 }

@@ -7,6 +7,10 @@
 //	D zone (L left, R right, D straight ahead, C and others)   E rack letter   F shelf number
 //	G another place to look, written together, e.g. "RK2"
 //
+// An article may take several rows: one per place that holds it, and now and then
+// the same place twice. Its rows are added up by place, because the ledger keeps
+// one balance per article and place.
+//
 // The file is kept by hand, so everything doubtful is reported instead of guessed.
 // Remarks are in Russian: their readers are the bookkeepers who fix the file.
 package importer
@@ -14,9 +18,11 @@ package importer
 import (
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/xuri/excelize/v2"
 
@@ -25,9 +31,6 @@ import (
 
 // NoLocation holds stock whose row gives a balance but no place.
 const NoLocation = "?"
-
-// Skipped starts every remark about a row that was left out of the import.
-const Skipped = "НЕ ЗАГРУЖЕНО"
 
 type Result struct {
 	Sheet     string
@@ -59,12 +62,42 @@ func letter(s string) string {
 	return s
 }
 
-func stockTotal(stock []store.ImportStock) float64 {
-	total := 0.0
-	for _, s := range stock {
-		total += s.Qty
+// quantity reads a balance cell. Excel stores a number plainly, but a balance pasted
+// as text keeps the look its program gave it: a decimal comma or dot, thousands
+// split by spaces, apostrophes, or the other of the two signs.
+func quantity(raw string) (float64, bool) {
+	s := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || r == '\'' || r == '’' {
+			return -1
+		}
+		return r
+	}, raw)
+	commas, dots := strings.Count(s, ","), strings.Count(s, ".")
+	decimal := ""
+	switch {
+	case commas > 0 && dots > 0: // the sign written last is the decimal one
+		decimal = ","
+		if strings.LastIndex(s, ".") > strings.LastIndex(s, ",") {
+			decimal = "."
+		}
+	case commas == 1:
+		decimal = ","
+	case dots == 1:
+		decimal = "."
 	}
-	return total
+	for _, sign := range []string{",", "."} {
+		if sign != decimal {
+			s = strings.ReplaceAll(s, sign, "")
+		}
+	}
+	if decimal != "" {
+		s = strings.ReplaceAll(s, decimal, ".")
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, false
+	}
+	return v, true
 }
 
 func locationName(zone, rack, shelf string) string {
@@ -140,13 +173,14 @@ func parse(f *excelize.File, sheet string) (*Result, error) {
 		}
 
 		var qty float64
+		unclear := false
 		if raw := cell(2); raw != "" {
-			v, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
-			if err != nil || v < 0 {
-				warn(n, "%s: остаток %q не является количеством, принят за 0", code, raw)
-			} else {
-				qty = v
+			v, ok := quantity(raw)
+			if !ok {
+				unclear = true
+				warn(n, "%s: остаток %q не является количеством. Остатки этого товара в системе не изменяются", code, raw)
 			}
+			qty = v
 		}
 
 		rawZone, rawRack, shelf := cell(3), cell(4), cell(5)
@@ -175,8 +209,8 @@ func parse(f *excelize.File, sheet string) (*Result, error) {
 			}
 		}
 
-		sku := store.ImportSKU{Code: code, Name: name, Home: home, Alt: alt}
-		if home != "" {
+		sku := store.ImportSKU{Code: code, Name: name, Home: home, Alt: alt, KeepBalances: unclear}
+		if home != "" && !unclear {
 			sku.Stock = []store.ImportStock{{Location: home, Qty: qty}}
 		}
 		// A name that begins with the article is the bookkeepers' own sign of which goods a row means.
@@ -184,24 +218,40 @@ func parse(f *excelize.File, sheet string) (*Result, error) {
 
 		if idx, seen := bySKU[code]; seen {
 			first := &res.SKUs[idx]
+			first.KeepBalances = first.KeepBalances || unclear
 			same := strings.EqualFold(first.Name, name) || (namedByCode(first.Name) && namedByCode(name))
-			if !same && namedByCode(name) {
-				// The earlier row carries this article by mistake; this row is the real one.
-				warn(n, "%s: %s: %q (остаток %v). Этот артикул принадлежит товару %q", code, Skipped, first.Name, stockTotal(first.Stock), name)
-				*first = sku
-				continue
-			}
 			if !same {
-				warn(n, "%s: %s: %q (остаток %v). Этот артикул уже занят товаром %q", code, Skipped, name, qty, first.Name)
-				continue
+				other := name
+				if !namedByCode(first.Name) && namedByCode(name) {
+					// The earlier row carries this article by mistake; this row is the real one.
+					other, first.Name = first.Name, name
+					if home != "" {
+						home, first.Home = first.Home, home
+					}
+				}
+				warn(n, "%s: артикул повторяется с другим названием %q. Остатки сложены, товар назван %q", code, other, first.Name)
 			}
-			// The same article listed again: stock kept in a second place.
 			if home != "" {
-				first.Stock = append(first.Stock, store.ImportStock{Location: home, Qty: qty})
 				if first.Home == "" {
 					first.Home = home
 				} else if first.Alt == "" && home != first.Home {
 					first.Alt = home
+				}
+			}
+			for _, st := range sku.Stock {
+				at := -1
+				for j := range first.Stock {
+					if first.Stock[j].Location == st.Location {
+						at = j
+					}
+				}
+				if at < 0 {
+					first.Stock = append(first.Stock, st)
+					continue
+				}
+				first.Stock[at].Qty += st.Qty
+				if same {
+					warn(n, "%s: место %s указано повторно, остатки сложены: %v", code, st.Location, first.Stock[at].Qty)
 				}
 			}
 			continue
