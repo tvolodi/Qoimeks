@@ -57,6 +57,9 @@
   #remarksBlock .scroll, #changesBlock .scroll, #notInFileBlock .scroll { max-height: 320px; overflow: auto; margin-top: 8px; }
   #report thead th { position: sticky; top: 0; background: var(--card); }
   td.pos { color: var(--muted); width: 1%; }
+  /* Long names without spaces must not push the quantities out of sight. */
+  #changes td:nth-child(4), #notInFile td:nth-child(3), #remarks td:nth-child(3) { overflow-wrap: anywhere; }
+  #report th { white-space: nowrap; }
   #history td { white-space: nowrap; }
   header.top { position: sticky; top: 0; z-index: 10; background: var(--card); border-bottom: 1px solid var(--line); margin: 0; display: block; }
   header.top .inner { max-width: 1040px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 8px 20px; flex-wrap: wrap; }
