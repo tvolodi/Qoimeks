@@ -19,6 +19,8 @@ type ImportLocation struct {
 type ImportStock struct {
 	Location string
 	Qty      float64
+	// Row is the first row of the file that states this quantity; 0 if none.
+	Row int
 }
 
 // ImportSKU is one article from the Excel file. Home and Alt are location codes
@@ -50,6 +52,9 @@ type BalanceChange struct {
 	Location string  `json:"location"`
 	Was      float64 `json:"was"`
 	Now      float64 `json:"now"`
+	// Row is the row of the file the new quantity comes from; 0 when the file does
+	// not list the place at all.
+	Row int `json:"row,omitempty"`
 }
 
 // ImportReport is ImportResult with the details a person checks before applying.
@@ -213,6 +218,7 @@ func importBalances(ctx context.Context, tx pgx.Tx, skuID int64, sku ImportSKU, 
 		code   string
 		was    float64
 		target float64
+		row    int
 	}
 	places := map[int64]*place{}
 	var order []int64
@@ -243,6 +249,9 @@ func importBalances(ctx context.Context, tx pgx.Tx, skuID int64, sku ImportSKU, 
 			order = append(order, *loc)
 		}
 		places[*loc].target += st.Qty
+		if places[*loc].row == 0 {
+			places[*loc].row = st.Row
+		}
 	}
 	// Lock in a fixed order, as transfers do.
 	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
@@ -263,7 +272,7 @@ func importBalances(ctx context.Context, tx pgx.Tx, skuID int64, sku ImportSKU, 
 		if err := appendBalance(ctx, tx, movementID, skuID, loc, 0, &p.target); err != nil {
 			return nil, err
 		}
-		changes = append(changes, BalanceChange{Code: sku.Code, Name: sku.Name, Location: p.code, Was: p.was, Now: p.target})
+		changes = append(changes, BalanceChange{Code: sku.Code, Name: sku.Name, Location: p.code, Was: p.was, Now: p.target, Row: p.row})
 	}
 	return changes, nil
 }

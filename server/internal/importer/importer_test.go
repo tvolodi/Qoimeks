@@ -80,7 +80,7 @@ func TestParse(t *testing.T) {
 			t.Fatalf("%s: got %+v", code, s)
 		}
 		for i := range stock {
-			if s.Stock[i] != stock[i] {
+			if s.Stock[i].Location != stock[i].Location || s.Stock[i].Qty != stock[i].Qty || s.Stock[i].Row == 0 {
 				t.Fatalf("%s: stock %+v, want %+v", code, s.Stock, stock)
 			}
 		}

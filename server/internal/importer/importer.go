@@ -211,7 +211,7 @@ func parse(f *excelize.File, sheet string) (*Result, error) {
 
 		sku := store.ImportSKU{Code: code, Name: name, Home: home, Alt: alt, KeepBalances: unclear}
 		if home != "" && !unclear {
-			sku.Stock = []store.ImportStock{{Location: home, Qty: qty}}
+			sku.Stock = []store.ImportStock{{Location: home, Qty: qty, Row: n}}
 		}
 		// A name that begins with the article is the bookkeepers' own sign of which goods a row means.
 		namedByCode := func(name string) bool { return strings.HasPrefix(strings.ToUpper(name), strings.ToUpper(code)) }

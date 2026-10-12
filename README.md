@@ -61,8 +61,10 @@ language model, the microphone shows what was heard and the operator fills the f
 
 ## Stock overview and Excel in the browser
 
-The server's root page (`http://<server>:8080/`) is the web interface. It asks for the access
-code (`ACCESS_TOKEN`) and the person's name; everyone with the code can use all of it.
+The server's root page (`http://<server>:8080/`) is the web interface. The button at the top
+right asks for the access code (`ACCESS_TOKEN`) and the person's name; everyone with the code
+can use all of it. The code is kept until the browser is closed, the name is remembered. The
+interface has three pages: balances, import and export, and the import history.
 
 - **Balances** by SKU (with the places each is held in) or by place (with the SKUs on it), with search.
 - **Выгрузить в Excel** downloads the current stock as a workbook in the layout the importer
