@@ -53,10 +53,10 @@
   .numbers div { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
   .numbers b { display: block; font-size: 24px; }
   .numbers span { color: var(--muted); font-size: 13px; }
-  ul#remarks { margin: 8px 0 0; padding-left: 20px; max-height: 260px; overflow: auto; font-size: 14px; }
-  #changesBlock, #notInFileBlock { margin-top: 16px; }
-  #changesBlock .scroll, #notInFileBlock .scroll { max-height: 320px; overflow: auto; margin-top: 8px; }
-  #changesBlock td.num, #notInFileBlock td.num { text-align: right; white-space: nowrap; }
+  #remarksBlock, #changesBlock, #notInFileBlock { margin-top: 16px; }
+  #remarksBlock .scroll, #changesBlock .scroll, #notInFileBlock .scroll { max-height: 320px; overflow: auto; margin-top: 8px; }
+  #report thead th { position: sticky; top: 0; background: var(--card); }
+  td.pos { color: var(--muted); width: 1%; }
   #history td { white-space: nowrap; }
   header.top { position: sticky; top: 0; z-index: 10; background: var(--card); border-bottom: 1px solid var(--line); margin: 0; display: block; }
   header.top .inner { max-width: 1040px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 8px 20px; flex-wrap: wrap; }
@@ -173,13 +173,16 @@
         <div id="remarksBlock">
           <b>Замечания к файлу</b>
           <span class="hint">— файл загружается целиком; проверьте эти строки и при необходимости исправьте их в файле.</span>
-          <ul id="remarks"></ul>
+          <div class="scroll"><table>
+            <thead><tr><th class="num">№</th><th class="num">Строка файла</th><th>Замечание</th></tr></thead>
+            <tbody id="remarks"></tbody>
+          </table></div>
         </div>
         <div id="changesBlock">
           <b>Изменения остатков</b>
           <span class="hint">— где остаток в системе отличается от файла.</span>
           <div class="scroll"><table>
-            <thead><tr><th>Артикул</th><th>Номенклатура</th><th>Место</th><th>Было</th><th>Станет</th><th>Разница</th></tr></thead>
+            <thead><tr><th class="num">№</th><th class="num">Строка файла</th><th>Артикул</th><th>Номенклатура</th><th>Место</th><th class="num">Было</th><th class="num">Станет</th><th class="num">Разница</th></tr></thead>
             <tbody id="changes"></tbody>
           </table></div>
         </div>
@@ -187,7 +190,7 @@
           <b>Нет в файле</b>
           <span class="hint">— у этих товаров есть остаток в системе, но в файле их нет. Остаток не изменяется.</span>
           <div class="scroll"><table>
-            <thead><tr><th>Артикул</th><th>Номенклатура</th><th>Место</th><th>Остаток</th></tr></thead>
+            <thead><tr><th class="num">№</th><th>Артикул</th><th>Номенклатура</th><th>Место</th><th class="num">Остаток</th></tr></thead>
             <tbody id="notInFile"></tbody>
           </table></div>
         </div>
@@ -202,7 +205,7 @@
       <div id="historyMessage" class="note"></div>
       <div class="scroll">
         <table>
-          <thead><tr><th>Когда</th><th>Кто</th><th>Файл</th><th>Лист</th><th>Новых</th><th>Обновлено</th><th>Мест</th><th>Остатков</th><th></th></tr></thead>
+          <thead><tr><th class="num">№</th><th>Когда</th><th>Кто</th><th>Файл</th><th>Лист</th><th>Новых</th><th>Обновлено</th><th>Мест</th><th>Остатков</th><th></th></tr></thead>
           <tbody id="history"></tbody>
         </table>
       </div>
@@ -285,13 +288,13 @@ function render() {
   let shown = 0;
 
   if (mode === 'item') {
-    head(['Артикул'], ['Наименование'], ['Всего', true], ['Ед.'], ['Места']);
+    head(['№', true], ['Артикул'], ['Наименование'], ['Всего', true], ['Ед.'], ['Места']);
     for (const it of stock) {
       if (onlyStock && it.places.length === 0) continue;
       if (!matches(words, it.code, it.name, ...it.places.map(p => p.location_code))) continue;
       shown++;
       const tr = el('tr', undefined, it.places.length ? '' : 'empty');
-      tr.append(el('td', it.code, 'code'), el('td', it.name),
+      tr.append(el('td', shown, 'num pos'), el('td', it.code, 'code'), el('td', it.name),
         el('td', fmt(it.total), 'num' + (it.total < 0 ? ' neg' : '')), el('td', it.unit));
       const td = el('td');
       for (const p of it.places) {
@@ -303,7 +306,7 @@ function render() {
     }
     $('count').textContent = 'Товаров: ' + shown + ' из ' + stock.length;
   } else {
-    head(['Место'], ['Артикул'], ['Наименование'], ['Остаток', true], ['Ед.']);
+    head(['№', true], ['Место'], ['Артикул'], ['Наименование'], ['Остаток', true], ['Ед.']);
     const byPlace = new Map(); // code -> {name, rows: [{it, qty}]}
     for (const it of stock) {
       for (const p of it.places) {
@@ -317,13 +320,13 @@ function render() {
       if (!rows.length) continue;
       const tr = el('tr', undefined, 'group');
       const td = el('td', code + (g.name ? ' — ' + g.name : ''));
-      td.colSpan = 5;
+      td.colSpan = 6;
       tr.append(td);
       body.append(tr);
       for (const r of rows) {
         shown++;
         const row = el('tr');
-        row.append(el('td', ''), el('td', r.it.code, 'code'), el('td', r.it.name),
+        row.append(el('td', shown, 'num pos'), el('td', code), el('td', r.it.code, 'code'), el('td', r.it.name),
           el('td', fmt(r.qty), 'num' + (r.qty < 0 ? ' neg' : '')), el('td', r.it.unit));
         body.append(row);
       }
@@ -333,7 +336,7 @@ function render() {
   if (shown === 0) {
     const tr = el('tr');
     const td = el('td', stock.length ? 'Ничего не найдено' : 'В системе пока нет товаров', 'hint');
-    td.colSpan = 5;
+    td.colSpan = 6;
     tr.append(td);
     body.append(tr);
   }
@@ -510,33 +513,29 @@ function show(r) {
   $('nLocations').textContent = r.changes.locations_created;
   $('nBalances').textContent = r.changes.balances_posted;
   $('fileLine').textContent = 'Лист «' + r.sheet + '»: ' + r.skus + ' товаров, ' + r.locations + ' мест хранения.';
-  const list = $('remarks');
-  list.replaceChildren();
-  for (const text of r.remarks) {
-    const li = document.createElement('li');
-    li.textContent = text;
-    list.append(li);
-  }
-  $('remarksBlock').style.display = r.remarks.length ? 'block' : 'none';
-
-  const num = v => v.toLocaleString('ru-RU');
+  // Every table is numbered, and what comes from the file names its row there.
+  // A cell given as {n} is a plain right-aligned number, such as a row of the file.
   const fill = (block, body, rows, cells) => {
     $(body).replaceChildren();
-    for (const c of rows) {
-      const tr = document.createElement('tr');
+    rows.forEach((c, i) => {
+      const tr = el('tr');
+      tr.append(el('td', i + 1, 'num pos'));
       for (const v of cells(c)) {
-        const td = document.createElement('td');
-        td.textContent = typeof v === 'number' ? num(v) : v;
-        if (typeof v === 'number') td.className = 'num';
-        tr.append(td);
+        if (typeof v === 'number') tr.append(el('td', fmt(v), 'num'));
+        else if (typeof v === 'object') tr.append(el('td', v.n || '—', 'num'));
+        else tr.append(el('td', v));
       }
       $(body).append(tr);
-    }
+    });
     $(block).style.display = rows.length ? 'block' : 'none';
   };
+  fill('remarksBlock', 'remarks', r.remarks, text => {
+    const m = /^строка (\d+): (.*)$/s.exec(text);
+    return m ? [{ n: m[1] }, m[2]] : [{ n: 0 }, text];
+  });
   $('nBalancesLabel').textContent = r.applied ? 'остатков изменено' : 'остатков изменится';
   fill('changesBlock', 'changes', r.changes.balance_changes,
-    c => [c.code, c.name, c.location, c.was, c.now, (c.now > c.was ? '+' : '−') + num(Math.abs(c.now - c.was))]);
+    c => [{ n: c.row }, c.code, c.name, c.location, c.was, c.now, { n: (c.now > c.was ? '+' : '−') + fmt(Math.abs(c.now - c.was)) }]);
   fill('notInFileBlock', 'notInFile', r.changes.not_in_file, c => [c.code, c.name, c.location, c.was]);
 
   const select = $('sheet');
@@ -556,10 +555,11 @@ async function loadHistory() {
     const rows = await callJSON('/api/imports');
     body.replaceChildren();
     if (rows.length === 0) {
-      body.innerHTML = '<tr><td colspan="9" class="hint">Загрузок ещё не было</td></tr>';
+      body.innerHTML = '<tr><td colspan="10" class="hint">Загрузок ещё не было</td></tr>';
     }
     for (const r of rows) {
       const tr = document.createElement('tr');
+      tr.append(el('td', r.id, 'num pos'));
       const cells = [new Date(r.created_at).toLocaleString('ru-RU'), r.who, r.filename, r.sheet,
         r.skus_created, r.skus_updated, r.locations_created, r.with_balances ? r.balances_posted : '—'];
       for (const c of cells) { const td = document.createElement('td'); td.textContent = c; tr.append(td); }
@@ -576,7 +576,7 @@ async function loadHistory() {
       body.append(tr);
     }
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="9" class="hint"></td></tr>';
+    body.innerHTML = '<tr><td colspan="10" class="hint"></td></tr>';
     body.firstChild.firstChild.textContent = e.message;
   }
 }
@@ -584,10 +584,10 @@ async function loadHistory() {
 async function cancelImport(r) {
   if (needName(sayHistory)) return;
   const when = new Date(r.created_at).toLocaleString('ru-RU');
-  if (!confirm('Отменить загрузку «' + r.filename + '» от ' + when + '? Будет возвращено остатков: ' + r.balances_posted + '.')) return;
+  if (!confirm('Отменить загрузку № ' + r.id + ' «' + r.filename + '» от ' + when + '? Будет возвращено остатков: ' + r.balances_posted + '.')) return;
   try {
     const res = await callJSON('/api/imports/' + r.id + '/cancel', { method: 'POST', body: JSON.stringify({ who: access.who }) });
-    sayHistory('Загрузка отменена, возвращено остатков: ' + res.cancelled + '.', 'ok');
+    sayHistory('Загрузка № ' + r.id + ' отменена, возвращено остатков: ' + res.cancelled + '.', 'ok');
     loadHistory();
     load();
   } catch (e) {

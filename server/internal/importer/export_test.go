@@ -29,8 +29,8 @@ func TestWriteThenParse(t *testing.T) {
 	}
 	// Z-2 keeps its stock in a second place, which Parse takes as the place to look next.
 	want := []store.ImportSKU{
-		{Code: "Z-1", Name: "Z-1 Замок", Home: "RI2", Alt: "RK2", Stock: []store.ImportStock{{Location: "RI2", Qty: 10}, {Location: "LA1", Qty: 3}}},
-		{Code: "Z-2", Name: "Z-2 Кнопка", Home: "LA1", Alt: "RK2", Stock: []store.ImportStock{{Location: "LA1", Qty: 0}, {Location: "RK2", Qty: 4.5}}},
+		{Code: "Z-1", Name: "Z-1 Замок", Home: "RI2", Alt: "RK2", Stock: []store.ImportStock{{Location: "RI2", Qty: 10, Row: 2}, {Location: "LA1", Qty: 3, Row: 3}}},
+		{Code: "Z-2", Name: "Z-2 Кнопка", Home: "LA1", Alt: "RK2", Stock: []store.ImportStock{{Location: "LA1", Qty: 0, Row: 4}, {Location: "RK2", Qty: 4.5, Row: 5}}},
 		{Code: "Z-3", Name: "Z-3 Пусто"},
 	}
 	if !reflect.DeepEqual(got.SKUs, want) {
