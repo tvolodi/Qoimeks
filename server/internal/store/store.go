@@ -393,36 +393,42 @@ func (s *Store) Reverse(ctx context.Context, originalID, newID uuid.UUID, operat
 	var out Movement
 	created := false
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		orig, err := getMovement(ctx, tx, originalID)
-		if err != nil {
-			return err
-		}
-		if orig.Reverses != nil {
-			return invalid("a reversal cannot be reversed; post a new operation instead")
-		}
-		if orig.ReversedBy != nil && *orig.ReversedBy != newID {
-			return invalid("already reversed")
-		}
-		tag, err := tx.Exec(ctx, `
-			insert into movements (id, kind, sku_id, location_id, to_location_id, qty, operator, source, reverses)
-			values ($1, $2, $3, $4, $5, $6::numeric, $7, 'keyboard', $8)
-			on conflict (id) do nothing`,
-			newID, orig.Kind, orig.SKUID, orig.LocationID, orig.ToLocationID, orig.Qty, operator, originalID)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 1 {
-			created = true
-			legs := orig.Balances
-			sort.Slice(legs, func(i, j int) bool { return legs[i].LocationID < legs[j].LocationID })
-			for _, leg := range legs {
-				if err := appendBalance(ctx, tx, newID, leg.SKUID, leg.LocationID, -leg.Delta, nil); err != nil {
-					return err
-				}
-			}
-		}
-		out, err = getMovement(ctx, tx, newID)
+		var err error
+		out, created, err = reverse(ctx, tx, originalID, newID, operator, "keyboard")
 		return err
 	})
 	return out, created, asInvalid(err)
+}
+
+func reverse(ctx context.Context, tx pgx.Tx, originalID, newID uuid.UUID, operator, source string) (Movement, bool, error) {
+	orig, err := getMovement(ctx, tx, originalID)
+	if err != nil {
+		return Movement{}, false, err
+	}
+	if orig.Reverses != nil {
+		return Movement{}, false, invalid("a reversal cannot be reversed; post a new operation instead")
+	}
+	if orig.ReversedBy != nil && *orig.ReversedBy != newID {
+		return Movement{}, false, invalid("already reversed")
+	}
+	tag, err := tx.Exec(ctx, `
+		insert into movements (id, kind, sku_id, location_id, to_location_id, qty, operator, source, reverses)
+		values ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9)
+		on conflict (id) do nothing`,
+		newID, orig.Kind, orig.SKUID, orig.LocationID, orig.ToLocationID, orig.Qty, operator, source, originalID)
+	if err != nil {
+		return Movement{}, false, err
+	}
+	created := tag.RowsAffected() == 1
+	if created {
+		legs := orig.Balances
+		sort.Slice(legs, func(i, j int) bool { return legs[i].LocationID < legs[j].LocationID })
+		for _, leg := range legs {
+			if err := appendBalance(ctx, tx, newID, leg.SKUID, leg.LocationID, -leg.Delta, nil); err != nil {
+				return Movement{}, false, err
+			}
+		}
+	}
+	out, err := getMovement(ctx, tx, newID)
+	return out, created, err
 }

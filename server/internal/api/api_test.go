@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"sync"
 	"testing"
 
@@ -222,7 +223,7 @@ func TestVoiceWithoutServicesSaysSo(t *testing.T) {
 	c.do("POST", "/api/voice", nil, 503, nil)
 }
 
-func TestImportLoadsCatalogAndOpeningBalancesOnce(t *testing.T) {
+func TestImportLoadsCatalogAndReplacesBalances(t *testing.T) {
 	c, _, _ := setup(t, &Server{})
 	st := c.store
 	ctx := context.Background()
@@ -236,7 +237,7 @@ func TestImportLoadsCatalogAndOpeningBalancesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res != (store.ImportResult{LocationsCreated: 2, SKUsCreated: 2, SKUsUpdated: 1, BalancesPosted: 3}) {
+	if res.ImportResult != (store.ImportResult{LocationsCreated: 2, SKUsCreated: 2, SKUsUpdated: 1, BalancesPosted: 3}) {
 		t.Fatalf("first import: %+v", res)
 	}
 
@@ -259,22 +260,77 @@ func TestImportLoadsCatalogAndOpeningBalancesOnce(t *testing.T) {
 		t.Fatalf("X-1 places: %+v", x1)
 	}
 
-	// An operator issues 3; importing next week's file must not put them back.
-	c.do("POST", "/api/movements", store.NewMovement{
-		ID: uuid.New(), Kind: "issue", SKUID: x1.ID, LocationID: *x1.LocationID, Qty: 3, Operator: "Айгуль",
-	}, 201, nil)
+	// Loading the same file again finds nothing to change.
+	res, err = st.Import(ctx, locations, skus, store.ImportOptions{PostBalances: true, Operator: "импорт"})
+	if err != nil || res.ImportResult != (store.ImportResult{SKUsUpdated: 3}) {
+		t.Fatalf("same file again: %+v %v", res, err)
+	}
+
+	// Operators work on: 3 issued from the usual place, 5 received at a place the
+	// file does not list for X-1, and stock of a SKU the file does not mention.
+	post := func(kind string, skuID, locationID int64, qty float64) {
+		t.Helper()
+		c.do("POST", "/api/movements", store.NewMovement{
+			ID: uuid.New(), Kind: kind, SKUID: skuID, LocationID: locationID, Qty: qty, Operator: "Айгуль",
+		}, 201, nil)
+	}
+	var a01, bolt int64
+	for id, code := range codes {
+		if code == "A-01" {
+			a01 = id
+		}
+	}
+	for _, s := range cat.SKUs {
+		if s.Code == "BLT-M8-40" {
+			bolt = s.ID
+		}
+	}
+	post("issue", x1.ID, *x1.LocationID, 3)
+	post("receipt", x1.ID, a01, 5)
+	post("receipt", bolt, a01, 8)
+
+	// The bookkeepers' file wins: every difference becomes a stock-count movement.
 	skus[0].Stock[0].Qty = 99
+	dry, err := st.Import(ctx, locations, skus, store.ImportOptions{PostBalances: true, DryRun: true, Operator: "импорт"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	res, err = st.Import(ctx, locations, skus, store.ImportOptions{PostBalances: true, Operator: "импорт"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res != (store.ImportResult{SKUsUpdated: 3}) {
-		t.Fatalf("second import: %+v", res)
+	if res.ImportResult != (store.ImportResult{SKUsUpdated: 3, BalancesPosted: 2}) || dry.ImportResult != res.ImportResult {
+		t.Fatalf("third import: %+v, dry run: %+v", res, dry)
+	}
+	want := []store.BalanceChange{
+		{Code: "X-1", Name: "X-1 Замок", Location: "RI2", Was: 7, Now: 99},
+		{Code: "X-1", Name: "X-1 Замок", Location: "A-01", Was: 5, Now: 0},
+	}
+	sort.Slice(res.Changes, func(i, j int) bool { return res.Changes[i].Location > res.Changes[j].Location })
+	if len(res.Changes) != 2 || res.Changes[0] != want[0] || res.Changes[1] != want[1] {
+		t.Fatalf("changes: %+v", res.Changes)
+	}
+	left := store.BalanceChange{Code: "BLT-M8-40", Name: "Болт М8х40 оцинкованный", Location: "A-01", Was: 8, Now: 8}
+	if len(res.NotInFile) != 1 || res.NotInFile[0] != left {
+		t.Fatalf("not in the file: %+v", res.NotInFile)
 	}
 	var current []store.Balance
 	c.do("GET", "/api/balances?sku_id="+itoa(x1.ID), nil, 200, &current)
-	if len(current) != 2 || current[0].LocationCode != "RI2" || current[0].Qty != 7 || current[1].Qty != 4 {
+	if len(current) != 2 || current[0].LocationCode != "RI2" || current[0].Qty != 99 || current[1].Qty != 4 {
 		t.Fatalf("balances: %+v", current)
+	}
+
+	// The history keeps the difference the file made.
+	var history []store.Movement
+	c.do("GET", "/api/movements", nil, 200, &history)
+	var m store.Movement
+	for _, h := range history {
+		if h.Source == "import" && h.SKUID == x1.ID && h.LocationCode == "RI2" && h.Qty == 99 {
+			m = h
+		}
+	}
+	if m.Kind != store.KindAdjustment || m.Operator != "импорт" {
+		t.Fatalf("adjustment: %+v", m)
 	}
 }
 

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 
 	"qoimeks/server/internal/store"
@@ -81,8 +83,9 @@ func TestAdminImport(t *testing.T) {
 	if got := upload(t, preview, "phone", file, withBalances, &p); got != 200 {
 		t.Fatalf("preview: %d", got)
 	}
-	want := store.ImportResult{LocationsCreated: 4, SKUsCreated: 2, BalancesPosted: 2}
-	if p.Applied || p.Changes != want || p.SKUs != 2 || len(p.Remarks) != 1 || len(p.Sheets) != 1 || p.SHA256 == "" {
+	// Z-2 is listed twice under different names: one SKU, both balances.
+	want := store.ImportResult{LocationsCreated: 4, SKUsCreated: 2, BalancesPosted: 3}
+	if p.Applied || p.Changes.ImportResult != want || len(p.Changes.Changes) != 3 || p.SKUs != 2 || len(p.Remarks) != 1 || len(p.Sheets) != 1 || p.SHA256 == "" {
 		t.Fatalf("preview: %+v", p)
 	}
 	var cat store.Catalog
@@ -104,12 +107,12 @@ func TestAdminImport(t *testing.T) {
 		t.Fatalf("apply of a different file: %d", got)
 	}
 	var a importResponse
-	if got := upload(t, apply, "phone", file, fields, &a); got != 200 || !a.Applied || a.Changes != want {
+	if got := upload(t, apply, "phone", file, fields, &a); got != 200 || !a.Applied || a.Changes.ImportResult != want {
 		t.Fatalf("apply: %d %+v", got, a)
 	}
 
 	// Loading the same file again changes no balance; both loads are in the history.
-	if got := upload(t, apply, "phone", file, fields, &a); got != 200 || a.Changes != (store.ImportResult{SKUsUpdated: 2}) {
+	if got := upload(t, apply, "phone", file, fields, &a); got != 200 || a.Changes.ImportResult != (store.ImportResult{SKUsUpdated: 2}) {
 		t.Fatalf("second apply: %d %+v", got, a)
 	}
 	req, _ := http.NewRequest("GET", c.url+"/api/imports", nil)
@@ -124,6 +127,54 @@ func TestAdminImport(t *testing.T) {
 	if len(history) != 2 || history[1].Who != "Гульнара" || history[1].Filename != "stock.xlsx" ||
 		history[1].ImportResult != want || !history[1].WithBalances || history[1].Remarks != 1 {
 		t.Fatalf("history: %+v", history)
+	}
+
+	// A wrong load is cancelled as a whole: its balance changes are taken back by
+	// reversals, and what an operator posted after it stays.
+	stockOf := func(code string) (int64, map[string]float64) {
+		t.Helper()
+		var items []store.StockItem
+		c.do("GET", "/api/stock", nil, 200, &items)
+		for _, it := range items {
+			if it.Code == code {
+				places := map[string]float64{}
+				for _, p := range it.Places {
+					places[p.LocationCode] = p.Qty
+				}
+				return it.SKUID, places
+			}
+		}
+		t.Fatalf("%s is not in stock", code)
+		return 0, nil
+	}
+	z2, places := stockOf("Z-2")
+	if places["LA1"] != 4 || places["LA2"] != 9 {
+		t.Fatalf("Z-2 after the import: %v", places)
+	}
+	cat = store.Catalog{}
+	c.do("GET", "/api/catalog", nil, 200, &cat)
+	for _, l := range cat.Locations {
+		if l.Code == "LA1" {
+			c.do("POST", "/api/movements", store.NewMovement{
+				ID: uuid.New(), Kind: "receipt", SKUID: z2, LocationID: l.ID, Qty: 6, Operator: "Айгуль",
+			}, 201, nil)
+		}
+	}
+	cancel := "/api/imports/" + strconv.FormatInt(history[1].ID, 10) + "/cancel"
+	c.do("POST", cancel, map[string]string{"who": ""}, 400, nil)
+	var done map[string]int
+	c.do("POST", cancel, map[string]string{"who": "Гульнара"}, 200, &done)
+	if done["cancelled"] != 3 {
+		t.Fatalf("cancelled: %v", done)
+	}
+	if _, places := stockOf("Z-2"); len(places) != 1 || places["LA1"] != 6 {
+		t.Fatalf("Z-2 after the cancellation: %v", places)
+	}
+	c.do("POST", cancel, map[string]string{"who": "Гульнара"}, 400, nil)
+	c.do("POST", "/api/imports/999999/cancel", map[string]string{"who": "Гульнара"}, 404, nil)
+	c.do("GET", "/api/imports", nil, 200, &history)
+	if !history[1].Cancelled || history[0].Cancelled {
+		t.Fatalf("history after the cancellation: %+v", history)
 	}
 
 	// Not a workbook at all.
