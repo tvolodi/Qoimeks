@@ -33,4 +33,9 @@ if echo "$list" | grep -Eiq -- '--delete|(^| )(rm|delete)( |$)'; then fail "dele
 if grep -Eq -- '--delete|rsync' "$here/publish-site.sh"; then fail "script must not use --delete/rsync"; fi
 
 "$here/publish-site.sh" --dry-run --out "$tmp" >/dev/null 2>&1 && fail "target is required" || true
+# Both scripts must default to the same release folder (outside the repo).
+rel="$(grep -m1 '^out=' "$here/release-android.sh")"
+pub="$(grep -m1 '^out=' "$here/publish-site.sh")"
+case "$rel" in *'$root/../release-out'*) ;; *) fail "release-android.sh default folder changed: $rel" ;; esac
+case "$pub" in *'$root/../release-out'*) ;; *) fail "publish-site.sh default folder differs: $pub" ;; esac
 echo "ok"

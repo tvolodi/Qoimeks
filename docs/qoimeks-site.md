@@ -14,17 +14,17 @@ The page has no external resources: no CDN, no libraries.
 
 1. Build the release: run the release script (see the release docs). It writes
    `qoimeks-<version>.apk`, its SHA-256 and `latest.json` into the output folder
-   (default `./release-out`, outside git). It fails without `android/key.properties`.
+   (default `../release-out`, outside git, the same for both scripts). It fails without `android/key.properties`.
 2. Look at what would be uploaded:
 
    ```
-   scripts/publish-site.sh --dry-run --out release-out user@host:/srv/ai-dala/qoimeks/
+   scripts/publish-site.sh --dry-run user@host:/srv/ai-dala/qoimeks/
    ```
 
 3. Publish:
 
    ```
-   scripts/publish-site.sh --out release-out user@host:/srv/ai-dala/qoimeks/
+   scripts/publish-site.sh user@host:/srv/ai-dala/qoimeks/
    ```
 
    The destination is an `scp` directory (`$PUBLISH_CP` replaces `scp`). Order of the
@@ -38,29 +38,50 @@ Rollback: upload the previous `latest.json` (keep a copy of each release folder)
 `bash scripts/test-publish.sh` checks the order and the absence of delete commands; it
 also runs as part of `go test ./...` (package `internal/sitepublish`).
 
-## Caddy
+## nginx
 
-Serve the folder as static files. `.apk` gets the Android package type and is downloaded,
-`latest.json` is never cached (so an update shows at once):
+`ai-dala.com` is the owner's Next.js site on `hetzner-prod`: the host's nginx terminates
+TLS and proxies to the site on 127.0.0.1:3104. Cloudflare is in front of every domain
+and caches by default, hence the `no-cache` headers below. Serve the download area from
+a static host folder (here `/var/www/downloads/qoimeks/`, the `<target>` of the publish
+script) with a `location` placed **before** the proxy `location /` in the vhost, so a
+release never rebuilds the site:
 
 ```
-ai-dala.com {
-    handle_path /qoimeks/* {
-        root * /srv/ai-dala/qoimeks
-        @apk path *.apk
-        header @apk Content-Type application/vnd.android.package-archive
-        header @apk Content-Disposition attachment
-        @manifest path /latest.json
-        header @manifest Cache-Control "no-cache, no-store, must-revalidate"
-        header @manifest Content-Type application/json
-        file_server
+location = /qoimeks { return 301 /qoimeks/; }
+
+location /qoimeks/ {
+    alias /var/www/downloads/qoimeks/;
+    index index.html;
+
+    types {
+        text/html                                    html;
+        text/css                                     css;
+        application/javascript                       js;
+        application/json                             json;
+        application/vnd.android.package-archive      apk;
+        text/plain                                   sha256;
     }
-    redir /qoimeks /qoimeks/
+
+    # the page and the manifest must show a new release at once
+    location ~ ^/qoimeks/(latest\.json|index\.html)?$ {
+        alias /var/www/downloads/qoimeks/$1;
+        add_header Cache-Control "no-cache";
+    }
+
+    # versioned APKs never change
+    location ~ ^/qoimeks/(qoimeks-[^/]+\.apk)$ {
+        alias /var/www/downloads/qoimeks/$1;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
 }
 ```
 
-(Put the `handle_path` block next to the other routes of the site. `handle_path` strips
-the `/qoimeks` prefix, so the paths in the matchers are relative to the folder.)
+Notes: a regex `location` with `alias` needs the capture (as above). For `/qoimeks/` the
+capture is empty and `alias` resolves to the folder, which `index` turns into
+`index.html`. `add_header` in a nested location replaces the parent's headers, so none are
+set above. Reload with `nginx -t && systemctl reload nginx` (through the ai-dala-infra
+project).
 
 ## The QR code
 

@@ -148,7 +148,7 @@ Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoime
 ## Download page for operators
 
 `deploy/qoimeks-site/` is the static download page (ru/kk) of the Android app, published with
-`scripts/publish-site.sh <target>`. Release and publish steps and the Caddy snippet are in
+`scripts/publish-site.sh <target>`. Release and publish steps and the nginx snippet are in
 [docs/qoimeks-site.md](docs/qoimeks-site.md).
 
 ## How data is stored

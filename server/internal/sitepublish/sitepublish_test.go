@@ -70,6 +70,17 @@ func TestTemplateScript(t *testing.T) {
 			t.Errorf("site.js lacks %q", want)
 		}
 	}
+	// The fallback is hidden at start (JS runs) and shown only on failure; urls are checked.
+	hide := strings.Index(js, `getElementById("fallback").hidden = true;`)
+	fetchAt := strings.Index(js, "fetch(")
+	if hide < 0 || hide > fetchAt {
+		t.Error("site.js must hide the fallback before fetching")
+	}
+	for _, want := range []string{`indexOf("https://") === 0`, `indexOf("./") === 0`, "okUrl(m.url)"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("site.js url check lacks %q", want)
+		}
+	}
 	// The fallback message is visible in the markup itself, so it also shows without JavaScript.
 	if strings.Contains(read(t, "index.html"), `id="fallback" class="card warn" hidden`) {
 		t.Error("fallback must be visible by default")

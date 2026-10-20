@@ -20,7 +20,14 @@
   }
 
   // Fills version, notes and the download link from latest.json.
-  // On any failure the fallback message stays visible and the install steps still work.
+  // On any failure the fallback message is shown and the install steps still work.
+  // Hidden while the manifest loads; shown only when the fetch or the manifest fails.
+  document.getElementById("fallback").hidden = true;
+
+  function okUrl(u) {
+    return typeof u === "string" && (u.indexOf("https://") === 0 || u.indexOf("./") === 0);
+  }
+
   function show(m) {
     document.getElementById("version").textContent = m.versionName;
     document.getElementById("published").textContent = m.published || "";
@@ -34,7 +41,7 @@
   fetch("./latest.json", { cache: "no-store" })
     .then(function (r) { if (!r.ok) { throw new Error("http " + r.status); } return r.json(); })
     .then(function (m) {
-      if (!m || !m.url || !m.versionName) { throw new Error("bad manifest"); }
+      if (!m || !m.versionName || !okUrl(m.url)) { throw new Error("bad manifest"); }
       show(m);
     })
     .catch(function () {
