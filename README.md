@@ -111,6 +111,38 @@ operator enters it once in the app's settings together with their name. The name
 appears in the history; the code only decides who may use the server at all. To cut off
 access, change the code on the server and give the new one to the operators.
 
+### Connecting the app by QR
+
+The web page has a "Подключить приложение" block with a QR code that the app can scan instead
+of typing the server address and code. The QR is drawn in the browser (no external resources,
+no extra server endpoint); the server never receives the code for this.
+
+Payload:
+
+```
+qoimeks://setup?url=<urlencoded server address>[&code=<urlencoded access code>]
+```
+
+- `url` is always present: the page's own address without a trailing slash (`location.origin`).
+- `code` is added only after the code has been entered and accepted in that browser, and
+  disappears on sign-out. Before that the QR holds the address only.
+- Both values are percent-encoded as UTF-8 (JavaScript `encodeURIComponent`: letters, digits and
+  `-_.!~*'()` stay, everything else becomes `%XX`). The order is `url`, then `code`. A reader
+  ignores parameters it does not know.
+- Example: `qoimeks://setup?url=https%3A%2F%2Fqoimeks.ai-dala.com&code=s3cret%20code`
+
+A QR that contains the code lets anyone who photographs it use the server: do not show it to
+others. The page says so next to the QR. The QR is a version 1–10 code at error-correction
+level M, so the address plus a code of about 60 characters fits.
+
+The app's settings have a "Сканировать QR / QR сканерлеу" button that opens the camera and
+reads this QR. The scan fills the server address and, when present, the access code field; the
+operator still presses "Сохранить", and a payload without a code leaves the code field as it is.
+The code is never shown in a message or logged. Any other QR code, a denied camera permission or
+a phone without a camera shows a message in the app language and changes nothing; typing the
+values by hand always works. The app asks for the Android `CAMERA` permission only when the
+button is pressed.
+
 ## Production
 
 `deploy/` holds the production stack: the server and its own PostgreSQL in Docker Compose,
@@ -123,6 +155,70 @@ cp .env.example .env && chmod 600 .env    # fill in the values
 ```
 
 The catalog is then loaded from `https://<host>/`.
+
+## Release build
+
+`scripts/release-android.sh` builds the signed release APK and writes the files to publish
+into an output folder outside git (default `../release-out`):
+
+```sh
+scripts/release-android.sh --first-release --notes-ru "Что нового" --notes-kk "Жаңалықтар"
+scripts/release-android.sh --notes-file notes.txt     # lines "ru: ..." and "kk: ..."
+scripts/release-android.sh --dry-run ...              # run the checks, print the build command
+```
+
+The output folder gets `qoimeks-<version>.apk`, `qoimeks-<version>.apk.sha256` and
+`latest.json` (`versionCode`, `versionName`, `url`, `sha256`, `minVersionCode`, `notes.ru`,
+`notes.kk`, `published`). Version name and code come from `mobile/pubspec.yaml`. The script
+fails when `mobile/android/key.properties` is missing (a release is never signed with the
+debug key), and when the version code is not higher than the last published one, read from
+`<out>/latest.json` or `--last-published N`; with neither, pass `--first-release`.
+Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoimeks/`),
+`--min-version-code N` (default: the previous manifest value). The script test is
+`bash scripts/test-release.sh`; `go test ./...` runs it too.
+
+## Download page for operators
+
+`deploy/qoimeks-site/` is the static download page (ru/kk) of the Android app, published with
+`scripts/publish-site.sh <target>`. Release and publish steps and the nginx snippet are in
+[docs/qoimeks-site.md](docs/qoimeks-site.md).
+
+## Release build
+
+`scripts/release-android.sh` builds the signed release APK and writes the files to publish
+into an output folder outside git (default `../release-out`):
+
+```sh
+scripts/release-android.sh --first-release --notes-ru "Что нового" --notes-kk "Жаңалықтар"
+scripts/release-android.sh --notes-file notes.txt     # lines "ru: ..." and "kk: ..."
+scripts/release-android.sh --dry-run ...              # run the checks, print the build command
+```
+
+The output folder gets `qoimeks-<version>.apk`, `qoimeks-<version>.apk.sha256` and
+`latest.json` (`versionCode`, `versionName`, `url`, `sha256`, `minVersionCode`, `notes.ru`,
+`notes.kk`, `published`). Version name and code come from `mobile/pubspec.yaml`. The script
+fails when `mobile/android/key.properties` is missing (a release is never signed with the
+debug key), and when the version code is not higher than the last published one, read from
+`<out>/latest.json` or `--last-published N`; with neither, pass `--first-release`.
+Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoimeks/`),
+`--min-version-code N` (default: the previous manifest value). The script test is
+`bash scripts/test-release.sh`; `go test ./...` runs it too.
+
+### Update check in the app
+
+The release build passes `--dart-define=UPDATE_MANIFEST_URL=<base-url>latest.json` to
+`flutter build` (default `https://ai-dala.com/qoimeks/latest.json`; `--base-url` changes the
+base, `--manifest-url URL` sets the whole URL, `--no-update-check` builds with the setting
+empty). With an empty `UPDATE_MANIFEST_URL` (also a plain `flutter run`, or a future Google
+Play build, where self-updates are forbidden) the app never checks and Settings has no
+"check for updates" button.
+
+With a URL, the app reads the manifest on start, at most once a day. A newer `versionCode`
+shows a banner with the notes in the app language; the operator can dismiss it. An installed
+code below `minVersionCode` shows a banner that cannot be dismissed. Tapping the banner opens
+the manifest's `url` in the browser (the app has no install permission). Settings show the
+installed version and a "check for updates" button that checks at once. A missing network or a
+broken manifest shows nothing on the automatic check and never blocks work.
 
 ## How data is stored
 
@@ -144,3 +240,9 @@ cd mobile && flutter test
 ```
 
 Server tests create and drop their own database.
+
+## Licence
+
+Qoimeks is free software under the GNU Affero General Public License v3.0, see
+[LICENSE](LICENSE). You may run, change and host it; if you offer a changed version to
+others over a network, you must publish your changes under the same licence.

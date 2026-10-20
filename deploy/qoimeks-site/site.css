@@ -1,0 +1,20 @@
+* { box-sizing: border-box; }
+body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1f23; background: #f4f6f8; }
+main { max-width: 640px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.8rem; margin: 8px 0; }
+h2 { font-size: 1.25rem; margin: 8px 0; }
+section, .card { background: #fff; border-radius: 12px; padding: 12px 16px; margin: 12px 0; }
+.lang { text-align: right; }
+.lang button { font: inherit; padding: 6px 14px; border: 1px solid #888; background: #fff; border-radius: 8px; }
+.lang button[aria-pressed="true"] { background: #1b5e20; color: #fff; border-color: #1b5e20; }
+.download { display: block; text-align: center; font-size: 1.4rem; font-weight: bold; padding: 20px; margin: 16px 0;
+  background: #1b5e20; color: #fff; border-radius: 14px; text-decoration: none; }
+ol li { margin: 8px 0; }
+.warn { border-left: 6px solid #e65100; }
+.qr { width: 200px; height: 200px; display: block; margin: 8px auto; }
+.js [lang="kk"] { display: none; }
+.js[data-lang="kk"] [lang="kk"] { display: revert; }
+.js[data-lang="kk"] [lang="ru"] { display: none; }
+.muted { color: #555; font-size: .9rem; }
+.notes { white-space: pre-line; }
+[hidden] { display: none !important; }

@@ -78,6 +78,9 @@
   .note.error { display: block; background: #fbe9e7; color: var(--bad); }
   .note.ok { display: block; background: #e3f1ee; color: var(--accent); }
   #historyMessage { margin: 0 0 12px; }
+  #setup { text-align: center; }
+  #setup canvas { max-width: 100%; height: auto; border: 1px solid var(--line); }
+  #setup .warn { color: var(--bad); font-weight: 600; }
   .page h1 { font-size: 20px; margin: 0 0 12px; }
 </style>
 </head>
@@ -109,6 +112,15 @@
 </header>
 
 <main>
+  <section id="setup">
+    <h2>Подключить приложение</h2>
+    <p class="hint">В приложении откройте «Настройки» и выберите «Сканировать QR», затем наведите камеру на код.</p>
+    <canvas id="setupQR" width="260" height="260" role="img" aria-label="QR-код для подключения приложения"></canvas>
+    <p id="setupFail" class="hint" hidden></p>
+    <p id="setupState" class="hint"></p>
+    <p id="setupWarn" class="warn" hidden>QR с кодом доступа никому не показывайте: по нему можно войти в систему.</p>
+  </section>
+
   <section id="signedOut">
     <p class="lead">Чтобы увидеть данные, введите код доступа: кнопка «Войти» справа вверху.</p>
   </section>
@@ -228,6 +240,216 @@ const access = {
   who: localStorage.getItem('adminName') || '',
   signedIn: false,
 };
+
+// --- setup-qr begin (pure functions, no DOM: the Go test runs this block under node)
+// The payload the app scans; code is left out until the server has accepted it.
+function setupPayload(origin, code) {
+  let s = 'qoimeks://setup?url=' + encodeURIComponent(origin);
+  if (code) s += '&code=' + encodeURIComponent(code);
+  return s;
+}
+
+// Minimal QR encoder: byte mode, error correction level M, versions 1-10.
+// Per version: [EC codewords per block, blocks with short data, short data size, blocks with long data].
+const QR_M = [null, [10, 1, 16, 0], [16, 1, 28, 0], [26, 1, 44, 0], [18, 2, 32, 0], [24, 2, 43, 0],
+  [16, 4, 27, 0], [18, 4, 31, 0], [22, 2, 38, 2], [22, 3, 36, 2], [26, 4, 43, 1]];
+const QR_ALIGN = [null, [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]];
+
+function qrDataSize(v) {
+  const [, n1, d1, n2] = QR_M[v];
+  return n1 * d1 + n2 * (d1 + 1);
+}
+
+function qrReedSolomon(data, degree) {
+  const exp = [], log = [];
+  for (let i = 0, x = 1; i < 255; i++) { exp[i] = x; log[x] = i; x <<= 1; if (x & 256) x ^= 0x11D; }
+  const mul = (a, b) => (a && b ? exp[(log[a] + log[b]) % 255] : 0);
+  let gen = [1];
+  for (let i = 0; i < degree; i++) {
+    const next = new Array(gen.length + 1).fill(0);
+    gen.forEach((c, j) => { next[j] ^= c; next[j + 1] ^= mul(c, exp[i]); });
+    gen = next;
+  }
+  const rem = new Array(degree).fill(0);
+  for (const b of data) {
+    const f = b ^ rem.shift();
+    rem.push(0);
+    for (let i = 0; i < degree; i++) rem[i] ^= mul(gen[i + 1], f);
+  }
+  return rem;
+}
+
+function qrCodewords(bytes, v) {
+  const cap = qrDataSize(v);
+  const bits = [];
+  const put = (val, n) => { for (let i = n - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+  put(4, 4);
+  put(bytes.length, v < 10 ? 8 : 16);
+  bytes.forEach(b => put(b, 8));
+  put(0, Math.min(4, cap * 8 - bits.length));
+  while (bits.length % 8) bits.push(0);
+  const data = [];
+  for (let i = 0; i < bits.length; i += 8) data.push(parseInt(bits.slice(i, i + 8).join(''), 2));
+  for (let pad = 0xEC; data.length < cap; pad ^= 0xEC ^ 0x11) data.push(pad);
+
+  const [ec, n1, d1, n2] = QR_M[v];
+  const blocks = [];
+  let at = 0;
+  for (let i = 0; i < n1 + n2; i++) {
+    const len = i < n1 ? d1 : d1 + 1;
+    blocks.push(data.slice(at, at + len));
+    at += len;
+  }
+  const eccs = blocks.map(b => qrReedSolomon(b, ec));
+  const out = [];
+  for (let i = 0; i <= d1; i++) blocks.forEach(b => { if (i < b.length) out.push(b[i]); });
+  for (let i = 0; i < ec; i++) eccs.forEach(e => out.push(e[i]));
+  return out;
+}
+
+function qrPenalty(m) {
+  const n = m.length;
+  let p = 0;
+  for (let t = 0; t < 2; t++) {
+    const at = (a, b) => (t ? m[b][a] : m[a][b]);
+    for (let a = 0; a < n; a++) {
+      let run = 1;
+      for (let b = 1; b <= n; b++) {
+        if (b < n && at(a, b) === at(a, b - 1)) { run++; continue; }
+        if (run >= 5) p += run - 2;
+        run = 1;
+      }
+      for (let b = 0; b + 11 <= n; b++) {
+        const s = [];
+        for (let k = 0; k < 11; k++) s.push(at(a, b + k) ? 1 : 0);
+        const str = s.join('');
+        if (str === '10111010000' || str === '00001011101') p += 40;
+      }
+    }
+  }
+  let dark = 0;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      if (m[y][x]) dark++;
+      if (x + 1 < n && y + 1 < n && m[y][x] === m[y][x + 1] && m[y][x] === m[y + 1][x] && m[y][x] === m[y + 1][x + 1]) p += 3;
+    }
+  }
+  return p + 10 * Math.floor(Math.abs(dark * 20 - n * n * 10) / (n * n));
+}
+
+// qrMatrix returns rows of booleans (true = dark), without the quiet zone.
+function qrMatrix(text) {
+  const bytes = Array.from(new TextEncoder().encode(text));
+  let v = 1;
+  while (v <= 10 && (v < 10 ? 8 : 16) + 4 + bytes.length * 8 > qrDataSize(v) * 8) v++;
+  if (v > 10) throw new Error('too long');
+  const words = qrCodewords(bytes, v);
+  const n = 17 + 4 * v;
+  const mod = Array.from({ length: n }, () => new Array(n).fill(false));
+  const fn = Array.from({ length: n }, () => new Array(n).fill(false));
+  const set = (x, y, dark) => { if (x >= 0 && y >= 0 && x < n && y < n) { mod[y][x] = dark; fn[y][x] = true; } };
+
+  for (let i = 0; i < n; i++) { set(6, i, i % 2 === 0); set(i, 6, i % 2 === 0); }
+  const finder = (cx, cy) => {
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+      const d = Math.max(Math.abs(dx), Math.abs(dy));
+      set(cx + dx, cy + dy, d !== 4 && d !== 2);
+    }
+  };
+  finder(3, 3); finder(n - 4, 3); finder(3, n - 4);
+  const al = QR_ALIGN[v];
+  al.forEach((cx, i) => al.forEach((cy, j) => {
+    if ((i === 0 && j === 0) || (i === 0 && j === al.length - 1) || (i === al.length - 1 && j === 0)) return;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) set(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+  }));
+  const format = mask => {
+    let rem = mask; // level M is 00, so the 5 data bits are just the mask
+    for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
+    const bits = ((mask << 10) | rem) ^ 0x5412;
+    const bit = i => ((bits >>> i) & 1) !== 0;
+    for (let i = 0; i <= 5; i++) set(8, i, bit(i));
+    set(8, 7, bit(6)); set(8, 8, bit(7)); set(7, 8, bit(8));
+    for (let i = 9; i < 15; i++) set(14 - i, 8, bit(i));
+    for (let i = 0; i < 8; i++) set(n - 1 - i, 8, bit(i));
+    for (let i = 8; i < 15; i++) set(8, n - 15 + i, bit(i));
+    set(8, n - 8, true);
+  };
+  format(0);
+  if (v >= 7) {
+    let rem = v;
+    for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1F25);
+    const bits = (v << 12) | rem;
+    for (let i = 0; i < 18; i++) {
+      const a = n - 11 + (i % 3), b = Math.floor(i / 3), dark = ((bits >>> i) & 1) !== 0;
+      set(a, b, dark); set(b, a, dark);
+    }
+  }
+
+  let i = 0;
+  for (let right = n - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (let vert = 0; vert < n; vert++) for (let j = 0; j < 2; j++) {
+      const x = right - j, y = ((right + 1) & 2) === 0 ? n - 1 - vert : vert;
+      if (!fn[y][x] && i < words.length * 8) {
+        mod[y][x] = ((words[i >>> 3] >>> (7 - (i & 7))) & 1) !== 0;
+        i++;
+      }
+    }
+  }
+
+  const masks = [
+    (x, y) => (x + y) % 2 === 0, (x, y) => y % 2 === 0, (x, y) => x % 3 === 0, (x, y) => (x + y) % 3 === 0,
+    (x, y) => (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0, (x, y) => (x * y) % 2 + (x * y) % 3 === 0,
+    (x, y) => ((x * y) % 2 + (x * y) % 3) % 2 === 0, (x, y) => ((x + y) % 2 + (x * y) % 3) % 2 === 0,
+  ];
+  let best = null, bestScore = Infinity;
+  for (let mask = 0; mask < 8; mask++) {
+    format(mask);
+    const cand = mod.map((row, y) => row.map((d, x) => (fn[y][x] ? d : d !== masks[mask](x, y))));
+    const score = qrPenalty(cand);
+    if (score < bestScore) { best = cand; bestScore = score; }
+  }
+  return best;
+}
+// --- setup-qr end
+
+// Draws the setup QR; the code goes in only after the server has accepted it.
+function renderSetup() {
+  const withCode = access.signedIn && access.token !== '';
+  const origin = location.origin;
+  let m = null;
+  let fail = '';
+  if (!origin || origin === 'null') {
+    fail = 'Адрес сервера неизвестен: откройте страницу по адресу сервера.';
+  } else {
+    try {
+      m = qrMatrix(setupPayload(origin, withCode ? access.token : ''));
+    } catch (e) {
+      fail = 'Слишком длинный код для QR. Введите адрес и код в приложении вручную.';
+    }
+  }
+  const canvas = $('setupQR');
+  canvas.hidden = !m;
+  $('setupFail').hidden = !fail;
+  $('setupFail').textContent = fail;
+  $('setupWarn').hidden = !(m && withCode);
+  $('setupState').textContent = !m ? '' : withCode
+    ? 'В QR есть адрес сервера и код доступа.'
+    : 'В QR только адрес сервера. Чтобы добавить код доступа, войдите: кнопка «Войти» справа вверху.';
+  if (!m) return;
+  const quiet = 4;
+  const scale = Math.max(2, Math.floor(260 / (m.length + 2 * quiet)));
+  const size = (m.length + 2 * quiet) * scale;
+  canvas.width = size;
+  canvas.height = size;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, size, size);
+  g.fillStyle = '#000';
+  m.forEach((row, y) => row.forEach((dark, x) => {
+    if (dark) g.fillRect((x + quiet) * scale, (y + quiet) * scale, scale, scale);
+  }));
+}
 
 function say(text, kind, id) {
   const box = $(id || 'message');
@@ -392,11 +614,13 @@ async function signIn(token, who) {
   } catch (e) {
     access.signedIn = false;
     stock = null;
+    renderSetup();
     showPage();
     throw e;
   }
   access.signedIn = true;
   sessionStorage.setItem('accessToken', token);
+  renderSetup();
   say('');
   render();
   showPage();
@@ -427,6 +651,7 @@ $('signOut').onclick = () => {
   access.signedIn = false;
   sessionStorage.removeItem('accessToken');
   stock = null;
+  renderSetup();
   render();
   showPage();
   refreshButtons();
@@ -643,6 +868,7 @@ $('sheet').onchange = invalidate;
 $('balances').onchange = invalidate;
 
 refreshButtons();
+renderSetup();
 showPage();
 showAccess(false);
 if (access.token) {

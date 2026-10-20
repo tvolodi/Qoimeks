@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qoimeks</title>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<p class="lang"><button type="button" data-set="ru" aria-pressed="true">Русский</button> <button type="button" data-set="kk" aria-pressed="false">Қазақша</button></p>
+
+<h1>Qoimeks</h1>
+<p lang="ru">Приложение для складского учёта: приход, расход, перемещение и пересчёт товара по артикулам и местам хранения. Операцию можно ввести руками или голосом по-русски и по-казахски.</p>
+<p lang="kk">Қойма есебіне арналған қосымша: тауардың кірісі, шығысы, жылжуы және қайта санауы артикул мен сақтау орындары бойынша. Операцияны қолмен немесе орыс не қазақ тілінде дауыспен енгізуге болады.</p>
+
+<div id="release" class="card" hidden>
+  <p><span lang="ru">Текущая версия:</span><span lang="kk">Қазіргі нұсқа:</span> <strong id="version"></strong> <span id="published" class="muted"></span></p>
+  <p lang="ru"><strong>Что нового:</strong></p>
+  <p lang="ru" id="notes-ru" class="notes"></p>
+  <p lang="kk"><strong>Не жаңа:</strong></p>
+  <p lang="kk" id="notes-kk" class="notes"></p>
+</div>
+
+<a id="download" class="download" href="./latest.json">
+  <span lang="ru">Скачать приложение (APK)</span><span lang="kk">Қосымшаны жүктеу (APK)</span>
+</a>
+
+<div id="fallback" class="card warn">
+  <p lang="ru">Не удалось получить данные о последней версии. Кнопка выше открывает файл <a href="./latest.json">latest.json</a>, в нём указан адрес свежего APK. Если ничего не открылось, попросите ссылку у владельца системы.</p>
+  <p lang="kk">Соңғы нұсқа туралы деректі алу мүмкін болмады. Жоғарыдағы батырма соңғы APK мекенжайы бар <a href="./latest.json">latest.json</a> файлын ашады. Ештеңе ашылмаса, жүйе иесінен сілтемені сұраңыз.</p>
+</div>
+
+<section class="warn">
+  <h2 lang="ru">Если на телефоне уже стоит Qoimeks 0.1.0</h2>
+  <h2 lang="kk">Телефонда Qoimeks 0.1.0 бұрыннан тұрса</h2>
+  <p lang="ru">Старое приложение 0.1.0 подписано отладочным ключом, поэтому новую версию поверх него поставить нельзя. Сначала удалите старое приложение: нажмите на значок Qoimeks, подержите и выберите «Удалить». Данные не потеряются: они хранятся на сервере. Заново вводятся только адрес сервера, код доступа и имя.</p>
+  <p lang="kk">Ескі 0.1.0 қосымшасына сынақ кілтімен қол қойылған, сондықтан жаңа нұсқаны оның үстіне орнатуға болмайды. Алдымен ескі қосымшаны жойыңыз: Qoimeks белгішесін басып ұстап тұрып, «Жою» таңдаңыз. Деректер жоғалмайды: олар серверде сақталады. Тек сервер мекенжайы, қолжетімділік коды және аты қайта енгізіледі.</p>
+</section>
+
+<section>
+  <h2 lang="ru">Как установить</h2>
+  <h2 lang="kk">Қалай орнатуға болады</h2>
+  <ol lang="ru">
+    <li>Нажмите большую кнопку «Скачать приложение» выше. Если телефон спросит, разрешить ли скачивание файла, нажмите «Скачать» или «ОК».</li>
+    <li>Откройте скачанный файл <em>qoimeks-….apk</em> из уведомления или из папки «Загрузки».</li>
+    <li>Телефон скажет, что установка из этого источника запрещена. Нажмите «Настройки» и включите «Разрешить установку из этого источника» («Установка неизвестных приложений») для браузера, из которого вы скачали файл.</li>
+    <li>Вернитесь кнопкой «Назад» и нажмите «Установить».</li>
+    <li>Если появилось сообщение Google Play Protect, нажмите «Подробнее» и «Всё равно установить».</li>
+    <li>Откройте Qoimeks, в настройках введите адрес сервера, код доступа и своё имя.</li>
+  </ol>
+  <ol lang="kk">
+    <li>Жоғарыдағы үлкен «Қосымшаны жүктеу» батырмасын басыңыз. Телефон файлды жүктеуге рұқсат сұраса, «Жүктеу» немесе «ОК» басыңыз.</li>
+    <li>Жүктелген <em>qoimeks-….apk</em> файлын хабарландырудан немесе «Жүктемелер» қалтасынан ашыңыз.</li>
+    <li>Телефон бұл көзден орнатуға тыйым салынғанын айтады. «Баптаулар» басып, файлды жүктеген браузер үшін «Осы көзден орнатуға рұқсат ету» («Белгісіз қосымшаларды орнату») қосыңыз.</li>
+    <li>«Артқа» батырмасымен қайтып, «Орнату» басыңыз.</li>
+    <li>Google Play Protect хабары шықса, «Толығырақ» және «Бәрібір орнату» басыңыз.</li>
+    <li>Qoimeks ашып, баптауларда сервер мекенжайын, қолжетімділік кодын және өз атыңызды енгізіңіз.</li>
+  </ol>
+</section>
+
+<section>
+  <h2 lang="ru">Обновление</h2>
+  <h2 lang="kk">Жаңарту</h2>
+  <p lang="ru">Когда выйдет новая версия, приложение покажет сообщение. Нажмите на него, скачайте файл и установите так же, как выше: удалять приложение не нужно.</p>
+  <p lang="kk">Жаңа нұсқа шыққанда, қосымша хабар көрсетеді. Оны басып, файлды жүктеп, жоғарыдағыдай орнатыңыз: қосымшаны жоюдың қажеті жоқ.</p>
+</section>
+
+<section>
+  <h2 lang="ru">QR-код этой страницы</h2>
+  <h2 lang="kk">Осы беттің QR-коды</h2>
+  <p lang="ru">Покажите другому оператору, чтобы он открыл эту страницу на своём телефоне.</p>
+  <p lang="kk">Басқа операторға көрсетіңіз, ол осы бетті өз телефонында ашады.</p>
+  <!-- QR of the page address, generated once; see docs/qoimeks-site.md -->
+  <svg class="qr" viewBox="0 0 37 37" role="img" aria-label="QR" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path fill="#000" d="M4 4h7v1h-7zM12 4h1v1h-1zM14 4h2v1h-2zM19 4h2v1h-2zM22 4h1v1h-1zM26 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM12 5h1v1h-1zM14 5h1v1h-1zM16 5h1v1h-1zM20 5h1v1h-1zM22 5h2v1h-2zM26 5h1v1h-1zM32 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h2v1h-2zM15 6h2v1h-2zM19 6h2v1h-2zM24 6h1v1h-1zM26 6h1v1h-1zM28 6h3v1h-3zM32 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM14 7h2v1h-2zM20 7h2v1h-2zM23 7h2v1h-2zM26 7h1v1h-1zM28 7h3v1h-3zM32 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h2v1h-2zM15 8h2v1h-2zM18 8h3v1h-3zM22 8h2v1h-2zM26 8h1v1h-1zM28 8h3v1h-3zM32 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM13 9h2v1h-2zM16 9h1v1h-1zM19 9h3v1h-3zM24 9h1v1h-1zM26 9h1v1h-1zM32 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h7v1h-7zM13 11h5v1h-5zM19 11h2v1h-2zM23 11h2v1h-2zM4 12h1v1h-1zM7 12h6v1h-6zM14 12h1v1h-1zM16 12h2v1h-2zM21 12h1v1h-1zM23 12h3v1h-3zM28 12h1v1h-1zM30 12h3v1h-3zM4 13h1v1h-1zM7 13h1v1h-1zM12 13h1v1h-1zM17 13h1v1h-1zM20 13h1v1h-1zM22 13h2v1h-2zM27 13h2v1h-2zM30 13h2v1h-2zM6 14h1v1h-1zM9 14h2v1h-2zM14 14h2v1h-2zM17 14h1v1h-1zM19 14h3v1h-3zM25 14h1v1h-1zM27 14h2v1h-2zM30 14h1v1h-1zM4 15h2v1h-2zM7 15h1v1h-1zM9 15h1v1h-1zM11 15h7v1h-7zM20 15h2v1h-2zM23 15h4v1h-4zM28 15h2v1h-2zM32 15h1v1h-1zM5 16h1v1h-1zM7 16h2v1h-2zM10 16h2v1h-2zM13 16h2v1h-2zM17 16h1v1h-1zM19 16h2v1h-2zM24 16h1v1h-1zM26 16h2v1h-2zM32 16h1v1h-1zM4 17h2v1h-2zM7 17h2v1h-2zM15 17h4v1h-4zM20 17h3v1h-3zM24 17h1v1h-1zM26 17h7v1h-7zM10 18h2v1h-2zM13 18h3v1h-3zM17 18h1v1h-1zM20 18h5v1h-5zM27 18h2v1h-2zM30 18h1v1h-1zM32 18h1v1h-1zM5 19h2v1h-2zM8 19h1v1h-1zM12 19h1v1h-1zM15 19h1v1h-1zM19 19h1v1h-1zM26 19h2v1h-2zM30 19h1v1h-1zM32 19h1v1h-1zM4 20h1v1h-1zM7 20h5v1h-5zM16 20h1v1h-1zM18 20h1v1h-1zM20 20h1v1h-1zM23 20h2v1h-2zM27 20h1v1h-1zM29 20h1v1h-1zM4 21h1v1h-1zM6 21h2v1h-2zM12 21h7v1h-7zM20 21h2v1h-2zM23 21h2v1h-2zM27 21h2v1h-2zM30 21h2v1h-2zM4 22h3v1h-3zM8 22h3v1h-3zM14 22h1v1h-1zM19 22h1v1h-1zM22 22h2v1h-2zM25 22h2v1h-2zM28 22h2v1h-2zM32 22h1v1h-1zM4 23h3v1h-3zM11 23h3v1h-3zM15 23h1v1h-1zM18 23h1v1h-1zM25 23h1v1h-1zM29 23h2v1h-2zM4 24h3v1h-3zM9 24h2v1h-2zM13 24h1v1h-1zM16 24h7v1h-7zM24 24h8v1h-8zM12 25h1v1h-1zM16 25h1v1h-1zM18 25h1v1h-1zM21 25h2v1h-2zM24 25h1v1h-1zM28 25h2v1h-2zM4 26h7v1h-7zM12 26h5v1h-5zM18 26h1v1h-1zM23 26h2v1h-2zM26 26h1v1h-1zM28 26h2v1h-2zM4 27h1v1h-1zM10 27h1v1h-1zM12 27h1v1h-1zM15 27h2v1h-2zM18 27h2v1h-2zM21 27h1v1h-1zM23 27h2v1h-2zM28 27h1v1h-1zM32 27h1v1h-1zM4 28h1v1h-1zM6 28h3v1h-3zM10 28h1v1h-1zM12 28h2v1h-2zM16 28h3v1h-3zM21 28h9v1h-9zM4 29h1v1h-1zM6 29h3v1h-3zM10 29h1v1h-1zM12 29h1v1h-1zM15 29h1v1h-1zM17 29h1v1h-1zM21 29h2v1h-2zM31 29h1v1h-1zM4 30h1v1h-1zM6 30h3v1h-3zM10 30h1v1h-1zM14 30h1v1h-1zM16 30h1v1h-1zM19 30h1v1h-1zM21 30h1v1h-1zM23 30h1v1h-1zM25 30h1v1h-1zM27 30h2v1h-2zM30 30h3v1h-3zM4 31h1v1h-1zM10 31h1v1h-1zM13 31h2v1h-2zM16 31h2v1h-2zM20 31h3v1h-3zM25 31h1v1h-1zM27 31h4v1h-4zM32 31h1v1h-1zM4 32h7v1h-7zM12 32h1v1h-1zM14 32h2v1h-2zM19 32h1v1h-1zM21 32h1v1h-1zM23 32h6v1h-6z"/></svg>
+  <p class="muted" style="text-align:center">ai-dala.com/qoimeks</p>
+</section>
+</main>
+<script src="site.js"></script>
+</body>
+</html>

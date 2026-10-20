@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -5,17 +7,22 @@ import 'api.dart';
 import 'operation_screen.dart';
 import 'settings.dart';
 import 'settings_screen.dart';
+import 'update.dart';
 import 'voice.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(QoimeksApp(settings: await AppSettings.load()));
+  final settings = await AppSettings.load();
+  final updates = UpdateChecker(settings: settings);
+  runApp(QoimeksApp(settings: settings, updates: updates));
+  unawaited(updates.checkOnStart());
 }
 
 class QoimeksApp extends StatelessWidget {
-  const QoimeksApp({super.key, required this.settings});
+  const QoimeksApp({super.key, required this.settings, this.updates});
 
   final AppSettings settings;
+  final UpdateChecker? updates;
 
   @override
   Widget build(BuildContext context) {
@@ -35,8 +42,9 @@ class QoimeksApp extends StatelessWidget {
                 settings: settings,
                 api: ApiClient(settings.serverUrl, accessCode: settings.accessCode),
                 voice: MicrophoneCapture(),
+                updates: updates,
               )
-            : SettingsScreen(settings: settings, firstRun: true),
+            : SettingsScreen(settings: settings, firstRun: true, updates: updates),
       ),
     );
   }
