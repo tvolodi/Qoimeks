@@ -50,11 +50,21 @@ android {
 
     buildTypes {
         release {
-            // Without android/key.properties the build is signed with the debug key,
-            // so it still runs on a machine that does not hold the release key. Such a
-            // build cannot be installed over one signed with the release key.
-            signingConfig = signingConfigs.getByName(if (keyProperties != null) "release" else "debug")
+            // A release is signed with the release key or not built at all: a build signed
+            // with the debug key can never be updated by the real one.
+            signingConfig = signingConfigs.findByName("release")
         }
+    }
+}
+
+// Stop before any release task runs when android/key.properties is missing.
+gradle.taskGraph.whenReady {
+    val releaseTask = allTasks.any {
+        it.project == project && (it.name.contains("Release") || it.name.contains("release")) &&
+            (it.name.startsWith("assemble") || it.name.startsWith("bundle") || it.name.startsWith("package") || it.name.startsWith("validateSigning"))
+    }
+    if (releaseTask && keyProperties == null) {
+        throw GradleException("android/key.properties is missing: a release build is never signed with the debug key")
     }
 }
 

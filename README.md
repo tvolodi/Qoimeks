@@ -124,6 +124,27 @@ cp .env.example .env && chmod 600 .env    # fill in the values
 
 The catalog is then loaded from `https://<host>/`.
 
+## Release build
+
+`scripts/release-android.sh` builds the signed release APK and writes the files to publish
+into an output folder outside git (default `../release-out`):
+
+```sh
+scripts/release-android.sh --first-release --notes-ru "Что нового" --notes-kk "Жаңалықтар"
+scripts/release-android.sh --notes-file notes.txt     # lines "ru: ..." and "kk: ..."
+scripts/release-android.sh --dry-run ...              # run the checks, print the build command
+```
+
+The output folder gets `qoimeks-<version>.apk`, `qoimeks-<version>.apk.sha256` and
+`latest.json` (`versionCode`, `versionName`, `url`, `sha256`, `minVersionCode`, `notes.ru`,
+`notes.kk`, `published`). Version name and code come from `mobile/pubspec.yaml`. The script
+fails when `mobile/android/key.properties` is missing (a release is never signed with the
+debug key), and when the version code is not higher than the last published one, read from
+`<out>/latest.json` or `--last-published N`; with neither, pass `--first-release`.
+Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoimeks/`),
+`--min-version-code N` (default: the previous manifest value). The script test is
+`bash scripts/test-release.sh`; `go test ./...` runs it too.
+
 ## Download page for operators
 
 `deploy/qoimeks-site/` is the static download page (ru/kk) of the Android app, published with
