@@ -12,6 +12,8 @@ base_url="https://ai-dala.com/qoimeks/"
 last_published=""
 first_release=0
 dry_run=0
+manifest_url=""
+no_update_check=0
 min_code=""
 notes_ru=""
 notes_kk=""
@@ -29,6 +31,8 @@ Usage: scripts/release-android.sh [options]
   --notes-ru TEXT        release notes in Russian
   --notes-kk TEXT        release notes in Kazakh
   --notes-file FILE      notes as lines "ru: ..." and "kk: ..." (instead of the two above)
+  --manifest-url URL     manifest URL built into the app (default: <base-url>latest.json)
+  --no-update-check      build without the in-app update check (e.g. a Google Play build)
   --dry-run              run every check, print the build command, write nothing
 USAGE
 }
@@ -38,7 +42,7 @@ die() { echo "release-android: $*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
     case "$1" in
         --help|-h) usage; exit 0 ;;
-        --first-release|--dry-run) ;;
+        --first-release|--dry-run|--no-update-check) ;;
         *) [ $# -ge 2 ] || die "$1 needs a value" ;;
     esac
     case "$1" in
@@ -50,6 +54,8 @@ while [ $# -gt 0 ]; do
         --notes-ru) notes_ru="$2"; shift 2 ;;
         --notes-kk) notes_kk="$2"; shift 2 ;;
         --notes-file) notes_file="$2"; shift 2 ;;
+        --manifest-url) manifest_url="$2"; shift 2 ;;
+        --no-update-check) no_update_check=1; shift ;;
         --dry-run) dry_run=1; shift ;;
         *) usage >&2; die "unknown option $1" ;;
     esac
@@ -111,6 +117,12 @@ url="${base_url%/}/$apk_name"
 # manifest URL here.
 # DART-DEFINES: begin
 dart_defines=()
+if [ "$no_update_check" = 1 ]; then
+    [ -z "$manifest_url" ] || die "--no-update-check and --manifest-url contradict each other"
+else
+    [ -n "$manifest_url" ] || manifest_url="${base_url%/}/latest.json"
+    dart_defines+=("--dart-define=UPDATE_MANIFEST_URL=$manifest_url")
+fi
 # DART-DEFINES: end
 
 build=(flutter build apk --release --build-name "$version" --build-number "$code" ${dart_defines[@]+"${dart_defines[@]}"})

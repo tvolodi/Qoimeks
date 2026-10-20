@@ -47,6 +47,19 @@ run --out "$tmp/o3" --first-release --dry-run "${notes[@]}"; rc=$?
     && [ ! -e "$tmp/o3" ] && [ ! -e "$tmp/flutter.log" ]
 check "dry run prints the command and writes nothing" $?
 
+# update check define
+d=--dart-define=UPDATE_MANIFEST_URL
+run --out "$tmp/o3" --first-release --dry-run "${notes[@]}"
+grep -qF -- "$d=https://ai-dala.com/qoimeks/latest.json" "$tmp/stdout"; check "default manifest url define" $?
+run --out "$tmp/o3" --first-release --dry-run --base-url https://example.org/app "${notes[@]}"
+grep -qF -- "$d=https://example.org/app/latest.json" "$tmp/stdout"; check "--base-url derives the manifest url" $?
+run --out "$tmp/o3" --first-release --dry-run --manifest-url https://x.org/y.json "${notes[@]}"
+grep -qF -- "$d=https://x.org/y.json" "$tmp/stdout"; check "--manifest-url overrides" $?
+run --out "$tmp/o3" --first-release --dry-run --no-update-check "${notes[@]}"; rc=$?
+[ $rc -eq 0 ] && ! grep -q UPDATE_MANIFEST_URL "$tmp/stdout"; check "--no-update-check adds no define" $?
+run --out "$tmp/o3" --first-release --dry-run --no-update-check --manifest-url https://x.org/y.json "${notes[@]}"; rc=$?
+[ $rc -ne 0 ]; check "--no-update-check with --manifest-url fails" $?
+
 # first release
 out="$tmp/o4"
 run --out "$out" --first-release "${notes[@]}"; rc=$?

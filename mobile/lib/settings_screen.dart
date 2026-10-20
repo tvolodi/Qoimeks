@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
+import 'l10n.dart';
 import 'settings.dart';
+import 'update.dart';
 
 /// Shown on first launch (nothing works without a server and a name) and from the gear icon.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.settings, this.firstRun = false});
+  const SettingsScreen({super.key, required this.settings, this.firstRun = false, this.updates});
 
   final AppSettings settings;
+  final UpdateChecker? updates;
   final bool firstRun;
 
   @override
@@ -21,6 +24,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final _accessCode = TextEditingController(text: widget.settings.accessCode);
   late final _operator = TextEditingController(text: widget.settings.operator);
   late String _lang = widget.settings.lang;
+
+  Future<void> _checkUpdates(Strings s) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await widget.updates!.checkNow();
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(s(switch (result) {
+        UpdateResult.available => 'update_available',
+        UpdateResult.failed => 'update_check_failed',
+        _ => 'update_up_to_date',
+      })),
+    ));
+  }
 
   @override
   void dispose() {
@@ -103,6 +119,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               height: 56,
               child: FilledButton(key: const Key('save'), onPressed: _save, child: Text(s('save'))),
             ),
+            if (widget.updates != null) ...[
+              const SizedBox(height: 24),
+              FutureBuilder<String>(
+                future: widget.updates!.installedLabel(),
+                builder: (context, snap) => Text(
+                  key: const Key('app_version'),
+                  '${s('app_version')}: ${snap.data ?? ''}',
+                ),
+              ),
+              if (widget.updates!.enabled) ...[
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  key: const Key('check_update'),
+                  onPressed: () => _checkUpdates(s),
+                  child: Text(s('check_updates')),
+                ),
+              ],
+            ],
           ],
         ),
       ),

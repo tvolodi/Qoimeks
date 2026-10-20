@@ -151,6 +151,43 @@ Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoime
 `scripts/publish-site.sh <target>`. Release and publish steps and the nginx snippet are in
 [docs/qoimeks-site.md](docs/qoimeks-site.md).
 
+## Release build
+
+`scripts/release-android.sh` builds the signed release APK and writes the files to publish
+into an output folder outside git (default `../release-out`):
+
+```sh
+scripts/release-android.sh --first-release --notes-ru "Что нового" --notes-kk "Жаңалықтар"
+scripts/release-android.sh --notes-file notes.txt     # lines "ru: ..." and "kk: ..."
+scripts/release-android.sh --dry-run ...              # run the checks, print the build command
+```
+
+The output folder gets `qoimeks-<version>.apk`, `qoimeks-<version>.apk.sha256` and
+`latest.json` (`versionCode`, `versionName`, `url`, `sha256`, `minVersionCode`, `notes.ru`,
+`notes.kk`, `published`). Version name and code come from `mobile/pubspec.yaml`. The script
+fails when `mobile/android/key.properties` is missing (a release is never signed with the
+debug key), and when the version code is not higher than the last published one, read from
+`<out>/latest.json` or `--last-published N`; with neither, pass `--first-release`.
+Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoimeks/`),
+`--min-version-code N` (default: the previous manifest value). The script test is
+`bash scripts/test-release.sh`; `go test ./...` runs it too.
+
+### Update check in the app
+
+The release build passes `--dart-define=UPDATE_MANIFEST_URL=<base-url>latest.json` to
+`flutter build` (default `https://ai-dala.com/qoimeks/latest.json`; `--base-url` changes the
+base, `--manifest-url URL` sets the whole URL, `--no-update-check` builds with the setting
+empty). With an empty `UPDATE_MANIFEST_URL` (also a plain `flutter run`, or a future Google
+Play build, where self-updates are forbidden) the app never checks and Settings has no
+"check for updates" button.
+
+With a URL, the app reads the manifest on start, at most once a day. A newer `versionCode`
+shows a banner with the notes in the app language; the operator can dismiss it. An installed
+code below `minVersionCode` shows a banner that cannot be dismissed. Tapping the banner opens
+the manifest's `url` in the browser (the app has no install permission). Settings show the
+installed version and a "check for updates" button that checks at once. A missing network or a
+broken manifest shows nothing on the automatic check and never blocks work.
+
 ## How data is stored
 
 Two tables, both append-only (the database rejects `UPDATE` and `DELETE`):

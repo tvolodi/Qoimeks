@@ -51,6 +51,12 @@ const _ru = {
   'err_mic': 'Нет доступа к микрофону',
   'err_already_posted': 'Эта операция уже была проведена. Проверьте историю',
   'err_generic': 'Ошибка',
+  'update_available': 'Доступна новая версия',
+  'update_required': 'Требуется обновление',
+  'app_version': 'Версия приложения',
+  'check_updates': 'Проверить обновления',
+  'update_up_to_date': 'Установлена последняя версия',
+  'update_check_failed': 'Не удалось проверить обновления',
 };
 
 const _kk = {
@@ -102,6 +108,12 @@ const _kk = {
   'err_mic': 'Микрофонға рұқсат жоқ',
   'err_already_posted': 'Бұл операция бұрын өткізілген. Тарихты тексеріңіз',
   'err_generic': 'Қате',
+  'update_available': 'Жаңа нұсқа бар',
+  'update_required': 'Жаңарту қажет',
+  'app_version': 'Қолданба нұсқасы',
+  'check_updates': 'Жаңартуларды тексеру',
+  'update_up_to_date': 'Соңғы нұсқа орнатылған',
+  'update_check_failed': 'Жаңартуларды тексеру мүмкін болмады',
 };
 
 class Strings {

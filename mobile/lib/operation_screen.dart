@@ -7,6 +7,7 @@ import 'l10n.dart';
 import 'picker.dart';
 import 'settings.dart';
 import 'settings_screen.dart';
+import 'update.dart';
 import 'voice.dart';
 
 enum _Mic { idle, recording, busy }
@@ -14,9 +15,10 @@ enum _Mic { idle, recording, busy }
 /// The one form of the app. Every field can be typed or picked by hand, or the
 /// operator can say the whole operation and only check what was filled in.
 class OperationScreen extends StatefulWidget {
-  const OperationScreen({super.key, required this.settings, required this.api, required this.voice});
+  const OperationScreen({super.key, required this.settings, required this.api, required this.voice, this.updates});
 
   final AppSettings settings;
+  final UpdateChecker? updates;
   final ApiClient api;
   final VoiceCapture voice;
 
@@ -248,12 +250,17 @@ class _OperationScreenState extends State<OperationScreen> {
             tooltip: _s('settings'),
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => SettingsScreen(settings: widget.settings),
+              builder: (_) => SettingsScreen(settings: widget.settings, updates: widget.updates),
             )),
           ),
         ],
       ),
-      body: _catalog == null ? _buildLoading() : _buildForm(context),
+      body: Column(
+        children: [
+          if (widget.updates != null) UpdateBanner(checker: widget.updates!),
+          Expanded(child: _catalog == null ? _buildLoading() : _buildForm(context)),
+        ],
+      ),
       bottomNavigationBar: _catalog == null ? null : _buildActions(context),
     );
   }

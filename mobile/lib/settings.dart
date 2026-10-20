@@ -5,7 +5,7 @@ import 'l10n.dart';
 
 /// Per-device settings. There is no login: the operator types their name once.
 class AppSettings extends ChangeNotifier {
-  AppSettings({this.serverUrl = '', this.accessCode = '', this.operator = '', this.lang = 'ru'});
+  AppSettings({this.serverUrl = '', this.accessCode = '', this.operator = '', this.lang = 'ru', this.lastUpdateCheck = 0});
 
   String serverUrl;
 
@@ -13,6 +13,9 @@ class AppSettings extends ChangeNotifier {
   String accessCode;
   String operator;
   String lang;
+
+  /// When the update manifest was last read successfully (ms since epoch, 0 = never).
+  int lastUpdateCheck;
 
   Strings get s => Strings(lang);
 
@@ -25,7 +28,15 @@ class AppSettings extends ChangeNotifier {
       accessCode: p.getString('accessCode') ?? '',
       operator: p.getString('operator') ?? '',
       lang: p.getString('lang') ?? 'ru',
+      lastUpdateCheck: p.getInt('lastUpdateCheck') ?? 0,
     );
+  }
+
+  /// Not a notifying change: nothing on screen depends on it.
+  Future<void> markUpdateChecked(DateTime t) async {
+    lastUpdateCheck = t.millisecondsSinceEpoch;
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('lastUpdateCheck', lastUpdateCheck);
   }
 
   Future<void> update({
