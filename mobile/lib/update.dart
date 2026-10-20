@@ -47,14 +47,16 @@ UpdateInfo? parseManifest(String body) {
         name is! String ||
         url is! String ||
         url.isEmpty ||
-        min is! int)
+        min is! int) {
       return null;
+    }
     final notes = <String, String>{};
     final n = j['notes'];
     if (n is Map) {
       for (final e in n.entries) {
-        if (e.key is String && e.value is String)
+        if (e.key is String && e.value is String) {
           notes[e.key as String] = e.value as String;
+        }
       }
     }
     return UpdateInfo(
@@ -75,8 +77,9 @@ typedef InstalledVersion = Future<({String name, int code})> Function();
 
 Future<String> _httpFetch(Uri url) async {
   final r = await http.get(url).timeout(const Duration(seconds: 8));
-  if (r.statusCode != 200)
+  if (r.statusCode != 200) {
     throw http.ClientException('HTTP ${r.statusCode}', url);
+  }
   return utf8.decode(r.bodyBytes);
 }
 
@@ -135,8 +138,9 @@ class UpdateChecker extends ChangeNotifier {
     final last = settings.lastUpdateCheck;
     if (last > 0 &&
         _now().difference(DateTime.fromMillisecondsSinceEpoch(last)) <
-            _checkEvery)
+            _checkEvery) {
       return;
+    }
     await _run();
   }
 

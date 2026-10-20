@@ -18,13 +18,13 @@ The page has no external resources: no CDN, no libraries.
 2. Look at what would be uploaded:
 
    ```
-   scripts/publish-site.sh --dry-run user@host:/srv/ai-dala/qoimeks/
+   scripts/publish-site.sh --dry-run user@host:/var/www/downloads/qoimeks/
    ```
 
 3. Publish:
 
    ```
-   scripts/publish-site.sh user@host:/srv/ai-dala/qoimeks/
+   scripts/publish-site.sh user@host:/var/www/downloads/qoimeks/
    ```
 
    The destination is an `scp` directory (`$PUBLISH_CP` replaces `scp`). Order of the

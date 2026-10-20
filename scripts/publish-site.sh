@@ -5,7 +5,7 @@
 #
 #   scripts/publish-site.sh [--dry-run] [--out DIR] <target>
 #
-# <target> is an scp destination directory, e.g. user@host:/srv/ai-dala/qoimeks/
+# <target> is an scp destination directory, e.g. user@host:/var/www/downloads/qoimeks/
 # DIR is the release output folder (default: ../release-out, as in release-android.sh, or $RELEASE_OUT).
 # $PUBLISH_CP overrides the copy command (default: scp).
 set -euo pipefail

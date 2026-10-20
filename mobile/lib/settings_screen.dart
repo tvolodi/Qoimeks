@@ -77,8 +77,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case ScanCancelled():
         message = null;
     }
-    if (message != null)
+    if (message != null) {
       messenger.showSnackBar(SnackBar(content: Text(s(message))));
+    }
   }
 
   @override
