@@ -240,3 +240,9 @@ cd mobile && flutter test
 ```
 
 Server tests create and drop their own database.
+
+## Licence
+
+Qoimeks is free software under the GNU Affero General Public License v3.0, see
+[LICENSE](LICENSE). You may run, change and host it; if you offer a changed version to
+others over a network, you must publish your changes under the same licence.
