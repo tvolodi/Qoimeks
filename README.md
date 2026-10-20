@@ -111,6 +111,30 @@ operator enters it once in the app's settings together with their name. The name
 appears in the history; the code only decides who may use the server at all. To cut off
 access, change the code on the server and give the new one to the operators.
 
+### Connecting the app by QR
+
+The web page has a "Подключить приложение" block with a QR code that the app can scan instead
+of typing the server address and code. The QR is drawn in the browser (no external resources,
+no extra server endpoint); the server never receives the code for this.
+
+Payload:
+
+```
+qoimeks://setup?url=<urlencoded server address>[&code=<urlencoded access code>]
+```
+
+- `url` is always present: the page's own address without a trailing slash (`location.origin`).
+- `code` is added only after the code has been entered and accepted in that browser, and
+  disappears on sign-out. Before that the QR holds the address only.
+- Both values are percent-encoded as UTF-8 (JavaScript `encodeURIComponent`: letters, digits and
+  `-_.!~*'()` stay, everything else becomes `%XX`). The order is `url`, then `code`. A reader
+  ignores parameters it does not know.
+- Example: `qoimeks://setup?url=https%3A%2F%2Fqoimeks.ai-dala.com&code=s3cret%20code`
+
+A QR that contains the code lets anyone who photographs it use the server: do not show it to
+others. The page says so next to the QR. The QR is a version 1–10 code at error-correction
+level M, so the address plus a code of about 60 characters fits.
+
 ## Production
 
 `deploy/` holds the production stack: the server and its own PostgreSQL in Docker Compose,
