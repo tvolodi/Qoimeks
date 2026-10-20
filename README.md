@@ -135,6 +135,14 @@ A QR that contains the code lets anyone who photographs it use the server: do no
 others. The page says so next to the QR. The QR is a version 1–10 code at error-correction
 level M, so the address plus a code of about 60 characters fits.
 
+The app's settings have a "Сканировать QR / QR сканерлеу" button that opens the camera and
+reads this QR. The scan fills the server address and, when present, the access code field; the
+operator still presses "Сохранить", and a payload without a code leaves the code field as it is.
+The code is never shown in a message or logged. Any other QR code, a denied camera permission or
+a phone without a camera shows a message in the app language and changes nothing; typing the
+values by hand always works. The app asks for the Android `CAMERA` permission only when the
+button is pressed.
+
 ## Production
 
 `deploy/` holds the production stack: the server and its own PostgreSQL in Docker Compose,

@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
 
 import 'l10n.dart';
+import 'qr_scanner.dart';
+import 'setup_qr.dart';
 import 'settings.dart';
 import 'update.dart';
 
 /// Shown on first launch (nothing works without a server and a name) and from the gear icon.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.settings, this.firstRun = false, this.updates});
+  const SettingsScreen({
+    super.key,
+    required this.settings,
+    this.firstRun = false,
+    this.updates,
+    this.scanner = const CameraQrScanner(),
+  });
 
   final AppSettings settings;
   final UpdateChecker? updates;
+  final QrScanner scanner;
   final bool firstRun;
 
   @override
@@ -19,9 +28,13 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _form = GlobalKey<FormState>();
   late final _server = TextEditingController(
-    text: widget.settings.serverUrl.isEmpty ? 'http://' : widget.settings.serverUrl,
+    text: widget.settings.serverUrl.isEmpty
+        ? 'http://'
+        : widget.settings.serverUrl,
   );
-  late final _accessCode = TextEditingController(text: widget.settings.accessCode);
+  late final _accessCode = TextEditingController(
+    text: widget.settings.accessCode,
+  );
   late final _operator = TextEditingController(text: widget.settings.operator);
   late String _lang = widget.settings.lang;
 
@@ -29,13 +42,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final result = await widget.updates!.checkNow();
     if (!mounted) return;
-    messenger.showSnackBar(SnackBar(
-      content: Text(s(switch (result) {
-        UpdateResult.available => 'update_available',
-        UpdateResult.failed => 'update_check_failed',
-        _ => 'update_up_to_date',
-      })),
-    ));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          s(switch (result) {
+            UpdateResult.available => 'update_available',
+            UpdateResult.failed => 'update_check_failed',
+            _ => 'update_up_to_date',
+          }),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _scan(Strings s) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await widget.scanner.scan(context, s);
+    if (!mounted) return;
+    final String? message;
+    switch (result) {
+      case ScanText(:final text):
+        final payload = parseSetupQr(text);
+        if (payload == null) {
+          message = 'qr_invalid';
+        } else {
+          _server.text = payload.url;
+          if (payload.code != null) _accessCode.text = payload.code!;
+          message = 'qr_filled';
+        }
+      case ScanPermissionDenied():
+        message = 'qr_permission_denied';
+      case ScanNoCamera():
+        message = 'qr_no_camera';
+      case ScanCancelled():
+        message = null;
+    }
+    if (message != null)
+      messenger.showSnackBar(SnackBar(content: Text(s(message))));
   }
 
   @override
@@ -62,7 +105,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     // Follows the language being chosen, before it is saved.
     final s = AppSettings(lang: _lang).s;
-    String? required(String? v) => (v == null || v.trim().isEmpty) ? s('required') : null;
+    String? required(String? v) =>
+        (v == null || v.trim().isEmpty) ? s('required') : null;
     return Scaffold(
       appBar: AppBar(title: Text(s('settings'))),
       body: Form(
@@ -83,7 +127,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               key: const Key('operator'),
               controller: _operator,
               textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(labelText: s('operator'), border: const OutlineInputBorder()),
+              decoration: InputDecoration(
+                labelText: s('operator'),
+                border: const OutlineInputBorder(),
+              ),
               validator: required,
             ),
             const SizedBox(height: 16),
@@ -99,7 +146,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               validator: (v) {
                 final uri = Uri.tryParse((v ?? '').trim());
-                return uri != null && uri.host.isNotEmpty ? null : s('required');
+                return uri != null && uri.host.isNotEmpty
+                    ? null
+                    : s('required');
               },
             ),
             const SizedBox(height: 16),
@@ -114,10 +163,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 border: const OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              key: const Key('scan_qr'),
+              onPressed: () => _scan(s),
+              icon: const Icon(Icons.qr_code_scanner),
+              label: Text(s('scan_qr')),
+            ),
             const SizedBox(height: 24),
             SizedBox(
               height: 56,
-              child: FilledButton(key: const Key('save'), onPressed: _save, child: Text(s('save'))),
+              child: FilledButton(
+                key: const Key('save'),
+                onPressed: _save,
+                child: Text(s('save')),
+              ),
             ),
             if (widget.updates != null) ...[
               const SizedBox(height: 24),
