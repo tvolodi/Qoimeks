@@ -124,6 +124,12 @@ cp .env.example .env && chmod 600 .env    # fill in the values
 
 The catalog is then loaded from `https://<host>/`.
 
+## Download page for operators
+
+`deploy/qoimeks-site/` is the static download page (ru/kk) of the Android app, published with
+`scripts/publish-site.sh <target>`. Release and publish steps and the Caddy snippet are in
+[docs/qoimeks-site.md](docs/qoimeks-site.md).
+
 ## How data is stored
 
 Two tables, both append-only (the database rejects `UPDATE` and `DELETE`):
