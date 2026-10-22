@@ -1,0 +1,229 @@
+package store
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	TenantActive    = "active"
+	TenantSuspended = "suspended"
+)
+
+// Tenant is one row of the registry. Its ledger lives in the schema SchemaName.
+type Tenant struct {
+	ID         uuid.UUID
+	Name       string
+	Language   string
+	Tier       string
+	OwnerEmail string
+	SchemaName string
+	AccessCode string
+	Status     string
+	CreatedAt  time.Time
+}
+
+// TenantInput is what the provisioning API passes to CreateTenant.
+type TenantInput struct {
+	ID         string
+	Name       string
+	Language   string
+	Tier       string
+	OwnerEmail string
+}
+
+var (
+	tenantLanguages = map[string]bool{"ru": true, "kk": true, "en": true}
+	tenantTiers     = map[string]bool{"demo": true, "hosted_own_keys": true, "hosted_all_inclusive": true}
+)
+
+func (in TenantInput) validate() (uuid.UUID, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return uuid.Nil, invalid("tenant_id must be a UUID")
+	}
+	switch {
+	case len([]rune(strings.TrimSpace(in.Name))) < 1 || len([]rune(in.Name)) > 200:
+		return uuid.Nil, invalid("name must be 1 to 200 characters")
+	case !tenantLanguages[in.Language]:
+		return uuid.Nil, invalid("language must be ru, kk or en")
+	case !tenantTiers[in.Tier]:
+		return uuid.Nil, invalid("tier must be demo, hosted_own_keys or hosted_all_inclusive")
+	case len(in.OwnerEmail) > 254:
+		return uuid.Nil, invalid("owner_email is too long")
+	}
+	return id, nil
+}
+
+// schemaFor derives the schema name from the parsed id, never from user text.
+func schemaFor(id uuid.UUID) string {
+	return "t_" + strings.ReplaceAll(id.String(), "-", "")
+}
+
+func hashCode(code string) []byte {
+	h := sha256.Sum256([]byte(code))
+	return h[:]
+}
+
+// ForSchema returns a store whose connections see only the given schema. It has its
+// own small pool; the caller closes it.
+func (s *Store) ForSchema(ctx context.Context, schema string) (*Store, error) {
+	cfg := s.cfg.Copy()
+	cfg.MaxConns = 4
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	params := map[string]string{}
+	for k, v := range cfg.ConnConfig.RuntimeParams {
+		params[k] = v
+	}
+	params["search_path"] = pgx.Identifier{schema}.Sanitize()
+	cfg.ConnConfig.RuntimeParams = params
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{pool: pool, cfg: cfg}, nil
+}
+
+// TenantStore opens the schema and brings it up to date before it serves requests.
+func (s *Store) TenantStore(ctx context.Context, schema string) (*Store, error) {
+	ts, err := s.ForSchema(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := fs.Sub(migrations, "migrations")
+	if err == nil {
+		err = ts.migrate(ctx, sub, true)
+	}
+	if err != nil {
+		ts.Close()
+		return nil, err
+	}
+	return ts, nil
+}
+
+// MigrateTenants brings every registered tenant schema (suspended ones too) up to date.
+// One failing tenant does not stop the others; the errors are joined.
+func (s *Store) MigrateTenants(ctx context.Context) error {
+	rows, err := s.pool.Query(ctx, `select schema_name from tenants order by created_at`)
+	if err != nil {
+		return err
+	}
+	schemas, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, schema := range schemas {
+		ts, err := s.TenantStore(ctx, schema)
+		if err != nil {
+			slog.Error("tenant migration failed", "schema", schema, "err", err)
+			errs = append(errs, fmt.Errorf("%s: %w", schema, err))
+			continue
+		}
+		ts.Close()
+	}
+	return errors.Join(errs...)
+}
+
+const tenantColumns = `tenant_id, name, language, tier, owner_email, schema_name, access_code, status, created_at`
+
+func scanTenant(row pgx.Row) (Tenant, error) {
+	var t Tenant
+	err := row.Scan(&t.ID, &t.Name, &t.Language, &t.Tier, &t.OwnerEmail, &t.SchemaName, &t.AccessCode, &t.Status, &t.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Tenant{}, ErrNotFound
+	}
+	return t, err
+}
+
+// CreateTenant registers a tenant and builds its schema. It is idempotent by id: a
+// repeat returns the stored tenant (created=false) and ignores changed fields. The
+// whole call holds a per-tenant advisory lock, so a concurrent repeat waits until the
+// schema is fully migrated.
+func (s *Store) CreateTenant(ctx context.Context, in TenantInput) (Tenant, bool, error) {
+	id, err := in.validate()
+	if err != nil {
+		return Tenant{}, false, err
+	}
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return Tenant{}, false, err
+	}
+	defer conn.Release()
+	lockKey := "qoimeks-tenant:" + id.String()
+	if _, err := conn.Exec(ctx, `select pg_advisory_lock(hashtext($1))`, lockKey); err != nil {
+		return Tenant{}, false, err
+	}
+	defer func() {
+		// Session lock: if the unlock fails the connection is broken, and closing it frees the lock.
+		if _, err := conn.Exec(context.Background(), `select pg_advisory_unlock(hashtext($1))`, lockKey); err != nil {
+			conn.Conn().Close(context.Background())
+		}
+	}()
+
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return Tenant{}, false, err
+	}
+	code := hex.EncodeToString(raw)
+	schema := schemaFor(id)
+	tag, err := conn.Exec(ctx, `
+		insert into tenants (tenant_id, name, language, tier, owner_email, schema_name, access_hash, access_code)
+		values ($1, $2, $3, $4, $5, $6, $7, $8)
+		on conflict (tenant_id) do nothing`,
+		id, strings.TrimSpace(in.Name), in.Language, in.Tier, in.OwnerEmail, schema, hashCode(code), code)
+	if err != nil {
+		return Tenant{}, false, err
+	}
+	created := tag.RowsAffected() == 1
+
+	// Also on repeats, so a schema that was half built heals.
+	if _, err := conn.Exec(ctx, `create schema if not exists `+pgx.Identifier{schema}.Sanitize()); err != nil {
+		return Tenant{}, false, fmt.Errorf("create schema: %w", err)
+	}
+	ts, err := s.TenantStore(ctx, schema)
+	if err != nil {
+		return Tenant{}, false, fmt.Errorf("migrate tenant schema: %w", err)
+	}
+	ts.Close()
+
+	t, err := scanTenant(conn.QueryRow(ctx, `select `+tenantColumns+` from tenants where tenant_id = $1`, id))
+	return t, created, err
+}
+
+func (s *Store) Tenant(ctx context.Context, id uuid.UUID) (Tenant, error) {
+	return scanTenant(s.pool.QueryRow(ctx, `select `+tenantColumns+` from tenants where tenant_id = $1`, id))
+}
+
+// TenantByCode finds the tenant that owns an access code, or ErrNotFound.
+func (s *Store) TenantByCode(ctx context.Context, code string) (Tenant, error) {
+	return scanTenant(s.pool.QueryRow(ctx, `select `+tenantColumns+` from tenants where access_hash = $1`, hashCode(code)))
+}
+
+// SetTenantStatus suspends or resumes a tenant; setting the current status again is fine.
+// Data in the tenant schema is not touched.
+func (s *Store) SetTenantStatus(ctx context.Context, id uuid.UUID, status string) error {
+	if status != TenantActive && status != TenantSuspended {
+		return invalid("unknown status %q", status)
+	}
+	tag, err := s.pool.Exec(ctx, `update tenants set status = $2, updated_at = now() where tenant_id = $1`, id, status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

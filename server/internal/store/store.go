@@ -42,10 +42,15 @@ func invalid(format string, a ...any) error {
 
 type Store struct {
 	pool *pgxpool.Pool
+	cfg  *pgxpool.Config
 }
 
 func Open(ctx context.Context, url string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, url)
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -53,47 +58,10 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		pool.Close()
 		return nil, err
 	}
-	return &Store{pool: pool}, nil
+	return &Store{pool: pool, cfg: cfg}, nil
 }
 
 func (s *Store) Close() { s.pool.Close() }
-
-// Migrate applies the embedded migrations that have not run yet, in file-name order.
-func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx,
-		`create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())`); err != nil {
-		return err
-	}
-	entries, err := migrations.ReadDir("migrations")
-	if err != nil {
-		return err
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	for _, e := range entries {
-		var done bool
-		if err := s.pool.QueryRow(ctx, `select exists(select 1 from schema_migrations where name = $1)`, e.Name()).Scan(&done); err != nil {
-			return err
-		}
-		if done {
-			continue
-		}
-		sql, err := migrations.ReadFile("migrations/" + e.Name())
-		if err != nil {
-			return err
-		}
-		err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-			if _, err := tx.Exec(ctx, string(sql)); err != nil {
-				return err
-			}
-			_, err := tx.Exec(ctx, `insert into schema_migrations (name) values ($1)`, e.Name())
-			return err
-		})
-		if err != nil {
-			return fmt.Errorf("migration %s: %w", e.Name(), err)
-		}
-	}
-	return nil
-}
 
 // SeedDemo loads a small demo catalog, but only into an empty database.
 func (s *Store) SeedDemo(ctx context.Context) error {

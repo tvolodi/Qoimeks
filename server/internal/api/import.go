@@ -87,7 +87,7 @@ func (s *Server) importWorkbook(w http.ResponseWriter, r *http.Request, apply bo
 			WithBalances: withBalances, Remarks: len(parsed.Warnings),
 		}
 	}
-	changes, err := s.Store.Import(r.Context(), parsed.Locations, parsed.SKUs, opts)
+	changes, err := s.store(r).Import(r.Context(), parsed.Locations, parsed.SKUs, opts)
 	if err != nil {
 		storeError(w, r, err)
 		return
@@ -106,7 +106,7 @@ func (s *Server) importWorkbook(w http.ResponseWriter, r *http.Request, apply bo
 }
 
 func (s *Server) importHistory(w http.ResponseWriter, r *http.Request) {
-	records, err := s.Store.Imports(r.Context(), 50)
+	records, err := s.store(r).Imports(r.Context(), 50)
 	if err != nil {
 		storeError(w, r, err)
 		return
@@ -136,7 +136,7 @@ func (s *Server) cancelImport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "your name is required")
 		return
 	}
-	n, err := s.Store.CancelImport(r.Context(), id, who)
+	n, err := s.store(r).CancelImport(r.Context(), id, who)
 	if err != nil {
 		storeError(w, r, err)
 		return
