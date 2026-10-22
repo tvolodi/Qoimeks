@@ -1,8 +1,8 @@
 # Qoimeks on ai-dala.com: public page and registration (DRAFT)
 
 Status (2026-10-22): the owner approved the tenant model (one PostgreSQL schema per tenant)
-and chose section 3 as the starting contract; problems are to be solved as they appear.
-Nothing in section 3 or 4 is built yet. Sources: `project/goal.md` (v3 "tiers and tenants"), README.
+and chose section 3 as the starting contract. The tenant API (section 3) is built in the
+Qoimeks server (task T-0010); section 3 below is the contract as implemented. Sources: `project/goal.md` (v3 "tiers and tenants"), README.
 
 ## 1. What Qoimeks is (text for the public page)
 
@@ -50,38 +50,58 @@ APK + `latest.json`). The new description page should link to it, not replace it
   all-inclusive/own-keys distinction a flag; own keys are entered later in the Qoimeks web admin
   (stage 3), never passed through the site.
 
-## 3. Proposed contract (OpenAPI-style sketch; Qoimeks owns it)
+## 3. Contract (implemented; Qoimeks owns it)
 
-Base: `https://qoimeks.ai-dala.com/admin/v1`. Server-to-server only; the browser never calls it.
-Auth: `Authorization: Bearer <PROVISIONING_TOKEN>` (separate from the app's `ACCESS_TOKEN`).
-Rate limit: 30 req/min per token (the site is the only caller). Idempotent by `tenant_id`.
+Base: `https://qoimeks.ai-dala.com/admin/v1` (same origin as the app API). Server-to-server
+only; the browser never calls it.
+Auth: `Authorization: Bearer <PROVISIONING_TOKEN>` (server env variable, separate from the
+app's `ACCESS_TOKEN`). Without a valid token every route answers 401 `unauthorized`. When the
+server has no `PROVISIONING_TOKEN` the whole API is off and answers 404.
+Rate limit: 30 requests per rolling minute for the token (the site is the only caller); over it
+429 `rate_limited` with a `Retry-After` header. Calls with a wrong token are not counted.
+Idempotent by `tenant_id`.
 
 ```
 POST /tenants
-  { "tenant_id": "uuid", "name": "string", "language": "ru|kk|en",
+  { "tenant_id": "uuid", "name": "string (1..200)", "language": "ru|kk|en",
     "tier": "demo|hosted_own_keys|hosted_all_inclusive",
-    "owner_email": "string" }
+    "owner_email": "string (<=254, optional)" }
   201 { "tenant_id", "status": "active", "server_url": "https://...",
-        "access_code": "string" }      // shown once; the site gives it to the customer
+        "access_code": "string" }
   200 same body if tenant_id already exists (idempotent)
   400 invalid_request | 401 unauthorized | 429 rate_limited
 
-POST /tenants/{tenant_id}/suspend   -> 200 { "status": "suspended" }
-POST /tenants/{tenant_id}/resume    -> 200 { "status": "active" }
+POST /tenants/{tenant_id}/suspend   -> 200 { "status": "suspended" }   (idempotent)
+POST /tenants/{tenant_id}/resume    -> 200 { "status": "active" }      (idempotent)
 GET  /tenants/{tenant_id}           -> 200 { "tenant_id", "status", "tier", "created_at" }
 404 for unknown tenant; errors: { "error": "code", "message": "string" }
 ```
 
-Open questions (to settle as they appear): how a tenant gets its own URL/subdomain vs a path; whether
-`access_code` per tenant replaces the shared `ACCESS_TOKEN`; payment-to-tier mapping.
+Behaviour that is not obvious from the shapes:
+- `server_url` is the server's public base URL (`PUBLIC_URL`, default
+  `https://qoimeks.ai-dala.com`). All tenants share it; there is no per-tenant subdomain or path.
+- `access_code` is the tenant's own code. The app and the web interface send it exactly like
+  `ACCESS_TOKEN` (`Authorization: Bearer <code>`) and are served from the tenant's own schema.
+  The shared `ACCESS_TOKEN` keeps serving the default schema, so single-tenant installs are
+  unchanged. A repeated POST returns the same stored code, so the site may ask again, but it
+  should keep the code (treat it like a password).
+- A repeated POST returns the stored tenant and ignores changed `name`, `tier` or other fields;
+  there is no update endpoint yet. Two simultaneous first POSTs give one 201 and one 200.
+- A suspended tenant gets 403 `{"error": "tenant suspended"}` on every `/api/*` call; its data
+  is untouched and `resume` restores access at once.
+- `name`, `language`, `tier` and `owner_email` are stored but do not change behaviour yet.
+
+Settled questions: a tenant has no URL of its own (one shared origin, selected by access code);
+the per-tenant `access_code` is added next to the shared `ACCESS_TOKEN`, it does not replace it.
+Still open: payment-to-tier mapping (the site's side).
 
 ## 4. What is available for QA now
 
-- Nothing live. The tenant API does not exist, and building it is not queued yet.
-- You can code against section 3 with a stub. Suggested stub behaviour: `POST /tenants`
-  returns 201 with `server_url: "https://qoimeks.ai-dala.com"` and a fake `access_code`;
-  repeat call returns 200; `suspend`/`resume` flip the status.
+- The tenant API of section 3 is built. It goes live when the owner deploys the server with
+  `PROVISIONING_TOKEN` (and optionally `PUBLIC_URL`) set in the server's `.env`; until then
+  `/admin/v1` answers 404 on production.
+- Until the deploy you can still code against section 3 with a stub: `POST /tenants` returns 201
+  with `server_url: "https://qoimeks.ai-dala.com"` and a fake `access_code`; a repeat returns 200;
+  `suspend`/`resume` flip the status.
 - A real, existing thing to link to: the static download page above, and (if the owner
   agrees) the v2 demo server once built.
-
-Remaining step: queue the tenant API work in the team (`team.py add`).

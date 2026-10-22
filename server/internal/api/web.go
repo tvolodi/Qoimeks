@@ -27,7 +27,7 @@ func (s *Server) webRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) stock(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.Stock(r.Context())
+	items, err := s.store(r).Stock(r.Context())
 	if err != nil {
 		storeError(w, r, err)
 		return
@@ -37,7 +37,7 @@ func (s *Server) stock(w http.ResponseWriter, r *http.Request) {
 
 // stockWorkbook exports the current stock in the layout the importer reads.
 func (s *Server) stockWorkbook(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.Stock(r.Context())
+	items, err := s.store(r).Stock(r.Context())
 	if err != nil {
 		storeError(w, r, err)
 		return

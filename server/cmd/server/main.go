@@ -31,6 +31,10 @@ func main() {
 		slog.Error("migration failed", "err", err)
 		os.Exit(1)
 	}
+	if err := st.MigrateTenants(ctx); err != nil {
+		// Other tenants and the default schema still work; the failing tenant's requests error.
+		slog.Error("some tenant schemas could not be migrated", "err", err)
+	}
 	if os.Getenv("SEED_DEMO") == "1" {
 		if err := st.SeedDemo(ctx); err != nil {
 			slog.Error("demo seed failed", "err", err)
@@ -38,7 +42,19 @@ func main() {
 		}
 	}
 
-	srv := &api.Server{Store: st, AccessToken: os.Getenv("ACCESS_TOKEN")}
+	srv := &api.Server{
+		Store:             st,
+		AccessToken:       os.Getenv("ACCESS_TOKEN"),
+		ProvisioningToken: os.Getenv("PROVISIONING_TOKEN"),
+		PublicURL:         os.Getenv("PUBLIC_URL"),
+	}
+	defer srv.Close()
+	switch {
+	case srv.ProvisioningToken == "":
+		slog.Info("PROVISIONING_TOKEN is not set: the tenant API (/admin/v1) is off")
+	case len(srv.ProvisioningToken) < 32:
+		slog.Warn("PROVISIONING_TOKEN is shorter than 32 characters: use a long random value")
+	}
 	if srv.AccessToken == "" {
 		slog.Warn("ACCESS_TOKEN is not set: anyone who can reach this server can use it")
 	}

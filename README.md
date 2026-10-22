@@ -29,6 +29,8 @@ On first launch the app asks for the operator's name and the server address
 | `DATABASE_URL` | `postgres://qoimeks:qoimeks@127.0.0.1:5433/qoimeks` | PostgreSQL |
 | `LISTEN_ADDR` | `:8080` | HTTP address |
 | `ACCESS_TOKEN` | — | shared access code every app must send; without it anyone who can reach the server can use it |
+| `PROVISIONING_TOKEN` | — | bearer token of the tenant API (`/admin/v1`) used by the ai-dala.com site; without it the API is off (404). Use 32+ random characters |
+| `PUBLIC_URL` | `https://qoimeks.ai-dala.com` | server address returned to the site as a tenant's `server_url` |
 | `SEED_DEMO` | — | `1` loads a demo catalog into an empty database |
 | `LLM_PROVIDER` | first provider whose key is set | who turns a spoken phrase into a draft operation, see below |
 | `LLM_MODEL` | per provider | model used for that |
@@ -142,6 +144,26 @@ The code is never shown in a message or logged. Any other QR code, a denied came
 a phone without a camera shows a message in the app language and changes nothing; typing the
 values by hand always works. The app asks for the Android `CAMERA` permission only when the
 button is pressed.
+
+## Tenants
+
+One server can host several tenants. Each tenant is a PostgreSQL schema (`t_<tenant id>`) with its
+own copy of the ledger tables and the same append-only triggers; the default schema is the
+original single-tenant install and keeps working with `ACCESS_TOKEN`. A tenant has its own
+access code: the app and the web interface send it like `ACCESS_TOKEN`, and the server serves
+the request from that tenant's schema. A suspended tenant gets 403 `tenant suspended`; its data is kept.
+
+The site creates, suspends and resumes tenants through `/admin/v1` (bearer `PROVISIONING_TOKEN`,
+30 requests a minute); the contract is in `docs/public-page-and-signup-draft.md`, section 3.
+
+Notes for developers:
+- With an empty `ACCESS_TOKEN` the default schema stays open to any request, as before; a tenant
+  is chosen only by an exact match of its access code.
+- A new migration runs in every tenant schema (at server start and when a tenant is first used)
+  unless it is listed in `publicOnly` in `server/internal/store/migrate.go`.
+- Each active tenant keeps a pool of up to 4 connections; size PostgreSQL `max_connections` for that.
+- The posting lock in `appendBalance` is database-wide, so tenants with equal numeric ids may
+  briefly wait for each other. That is intended.
 
 ## Production
 

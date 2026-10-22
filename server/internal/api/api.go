@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,8 +30,55 @@ type Server struct {
 	Parser      parse.Parser
 	Transcriber stt.Transcriber
 	// AccessToken, when set, must accompany every /api/ request. Leave it empty
-	// only where the network itself keeps strangers out.
+	// only where the network itself keeps strangers out. It selects the default
+	// schema; a tenant's own access code selects that tenant's schema.
 	AccessToken string
+	// ProvisioningToken guards /admin/v1 (tenant provisioning). Empty turns that API off.
+	ProvisioningToken string
+	// PublicURL is the server address returned to the site as a tenant's server_url.
+	PublicURL string
+
+	now     func() time.Time // tests replace the clock of the admin rate limiter
+	mu      sync.Mutex
+	tenants map[string]*store.Store // schema -> store, opened on first use
+}
+
+type storeKey struct{}
+
+// store is the ledger a request works on: its tenant's, or the default one.
+func (s *Server) store(r *http.Request) *store.Store {
+	if st, ok := r.Context().Value(storeKey{}).(*store.Store); ok {
+		return st
+	}
+	return s.Store
+}
+
+// tenantStore returns the cached store of a tenant schema, migrating it on first open.
+func (s *Server) tenantStore(ctx context.Context, schema string) (*store.Store, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if st, ok := s.tenants[schema]; ok {
+		return st, nil
+	}
+	st, err := s.Store.TenantStore(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
+	if s.tenants == nil {
+		s.tenants = map[string]*store.Store{}
+	}
+	s.tenants[schema] = st
+	return st, nil
+}
+
+// Close releases the pools of the tenant stores.
+func (s *Server) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, st := range s.tenants {
+		st.Close()
+		delete(s.tenants, k)
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -45,17 +93,44 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/voice", s.parseVoice)
 	s.webRoutes(mux)
 	s.importRoutes(mux)
+	s.adminRoutes(mux)
 	return cors(s.requireToken(mux))
 }
 
+// requireToken guards /api/. A bearer that is a tenant's access code selects that
+// tenant's schema (403 while suspended). Otherwise the shared AccessToken applies and
+// selects the default schema; with no AccessToken set the default schema stays open.
 func (s *Server) requireToken(next http.Handler) http.Handler {
-	if s.AccessToken == "" {
-		return next
-	}
 	want := []byte("Bearer " + s.AccessToken)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got := []byte(r.Header.Get("Authorization"))
-		if strings.HasPrefix(r.URL.Path, "/api/") && subtle.ConstantTimeCompare(got, want) != 1 {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		got := r.Header.Get("Authorization")
+		isDefault := s.AccessToken != "" && subtle.ConstantTimeCompare([]byte(got), want) == 1
+		if code, ok := strings.CutPrefix(got, "Bearer "); ok && code != "" && !isDefault {
+			t, err := s.Store.TenantByCode(r.Context(), code)
+			switch {
+			case err == nil:
+				if t.Status != store.TenantActive {
+					writeError(w, http.StatusForbidden, "tenant suspended")
+					return
+				}
+				ts, err := s.tenantStore(r.Context(), t.SchemaName)
+				if err != nil {
+					storeError(w, r, err)
+					return
+				}
+				r = r.WithContext(context.WithValue(r.Context(), storeKey{}, ts))
+				next.ServeHTTP(w, r)
+				return
+			case !errors.Is(err, store.ErrNotFound):
+				storeError(w, r, err)
+				return
+			}
+		}
+		if s.AccessToken != "" && !isDefault {
 			writeError(w, http.StatusUnauthorized, "access code is missing or wrong")
 			return
 		}
@@ -102,7 +177,7 @@ func storeError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func (s *Server) catalog(w http.ResponseWriter, r *http.Request) {
-	c, err := s.Store.Catalog(r.Context())
+	c, err := s.store(r).Catalog(r.Context())
 	if err != nil {
 		storeError(w, r, err)
 		return
@@ -116,7 +191,7 @@ func (s *Server) balances(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "sku_id is required")
 		return
 	}
-	b, err := s.Store.Balances(r.Context(), skuID)
+	b, err := s.store(r).Balances(r.Context(), skuID)
 	if err != nil {
 		storeError(w, r, err)
 		return
@@ -129,7 +204,7 @@ func (s *Server) movements(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
-	m, err := s.Store.Movements(r.Context(), limit)
+	m, err := s.store(r).Movements(r.Context(), limit)
 	if err != nil {
 		storeError(w, r, err)
 		return
@@ -147,7 +222,7 @@ func (s *Server) postMovement(w http.ResponseWriter, r *http.Request) {
 	if in.Source == "" {
 		in.Source = "keyboard"
 	}
-	m, created, err := s.Store.Post(r.Context(), in)
+	m, created, err := s.store(r).Post(r.Context(), in)
 	if err != nil {
 		storeError(w, r, err)
 		return
@@ -173,7 +248,7 @@ func (s *Server) reverseMovement(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
-	m, created, err := s.Store.Reverse(r.Context(), originalID, in.ID, strings.TrimSpace(in.Operator))
+	m, created, err := s.store(r).Reverse(r.Context(), originalID, in.ID, strings.TrimSpace(in.Operator))
 	if err != nil {
 		storeError(w, r, err)
 		return
@@ -250,7 +325,7 @@ func (s *Server) draft(w http.ResponseWriter, r *http.Request, text string) {
 		writeError(w, http.StatusServiceUnavailable, "phrase parsing is not configured on the server")
 		return
 	}
-	catalog, err := s.Store.Catalog(r.Context())
+	catalog, err := s.store(r).Catalog(r.Context())
 	if err != nil {
 		storeError(w, r, err)
 		return
