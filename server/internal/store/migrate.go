@@ -14,7 +14,8 @@ import (
 // every tenant schema, so a new migration reaches existing tenants on the next start.
 // Rule for new migrations: they run in every tenant schema unless listed here.
 var publicOnly = map[string]bool{
-	"005_tenants.sql": true,
+	"005_tenants.sql":                  true,
+	"006_tenants_drop_access_code.sql": true,
 }
 
 // Migrate applies the embedded migrations that have not run yet to the default schema.

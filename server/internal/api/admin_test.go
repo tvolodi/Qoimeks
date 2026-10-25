@@ -100,8 +100,15 @@ func TestCreateTenantTwice(t *testing.T) {
 	body := newBody()
 	var first, second tenantBody
 	call(t, "POST", url+"/admin/v1/tenants", provToken, body, 201, &first)
+	var raw map[string]any
 	call(t, "POST", url+"/admin/v1/tenants", provToken, body, 200, &second)
-	if first != second {
+	call(t, "POST", url+"/admin/v1/tenants", provToken, body, 200, &raw)
+	if _, has := raw["access_code"]; has || second.AccessCode != "" {
+		t.Fatalf("repeat returned a code: %+v", raw)
+	}
+	withoutCode := first
+	withoutCode.AccessCode = ""
+	if withoutCode != second {
 		t.Fatalf("bodies differ: %+v vs %+v", first, second)
 	}
 	if first.Status != "active" || first.AccessCode == "" || first.TenantID != body["tenant_id"] || first.ServerURL != "https://qoimeks.example" {
@@ -117,6 +124,34 @@ func TestCreateTenantTwice(t *testing.T) {
 	if got.Status != "active" || got.Tier != "demo" || got.CreatedAt == "" {
 		t.Fatalf("GET: %+v", got)
 	}
+}
+
+func TestRotateCode(t *testing.T) {
+	_, url, _ := adminSetup(t, "shared")
+	body := newBody()
+	id := body["tenant_id"]
+	var tn, rot tenantBody
+	call(t, "POST", url+"/admin/v1/tenants", provToken, body, 201, &tn)
+	call(t, "POST", url+"/admin/v1/tenants/"+id+"/rotate-code", "", nil, 401, nil)
+	call(t, "POST", url+"/admin/v1/tenants/"+id+"/rotate-code", "wrong", nil, 401, nil)
+	call(t, "GET", url+"/api/stock", tn.AccessCode, nil, 200, nil)
+
+	call(t, "POST", url+"/admin/v1/tenants/"+id+"/suspend", provToken, nil, 200, nil)
+	call(t, "POST", url+"/admin/v1/tenants/"+id+"/rotate-code", provToken, nil, 200, &rot)
+	if rot.AccessCode == "" || rot.AccessCode == tn.AccessCode {
+		t.Fatalf("rotated code: %+v", rot)
+	}
+	call(t, "POST", url+"/admin/v1/tenants/"+id+"/resume", provToken, nil, 200, nil)
+	call(t, "GET", url+"/api/stock", tn.AccessCode, nil, 401, nil)
+	call(t, "GET", url+"/api/stock", rot.AccessCode, nil, 200, nil)
+
+	var raw map[string]any
+	call(t, "POST", url+"/admin/v1/tenants", provToken, body, 200, &raw)
+	if _, has := raw["access_code"]; has {
+		t.Fatal("repeat POST leaked a code after rotation")
+	}
+	call(t, "POST", url+"/admin/v1/tenants/"+uuid.NewString()+"/rotate-code", provToken, nil, 404, nil)
+	call(t, "POST", url+"/admin/v1/tenants/not-a-uuid/rotate-code", provToken, nil, 404, nil)
 }
 
 func TestSuspendedTenantIsRefusedAndResumeRestores(t *testing.T) {

@@ -51,6 +51,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/v1/tenants", guard(s.createTenant))
 	mux.HandleFunc("POST /admin/v1/tenants/{id}/suspend", guard(s.setTenantStatus(store.TenantSuspended)))
 	mux.HandleFunc("POST /admin/v1/tenants/{id}/resume", guard(s.setTenantStatus(store.TenantActive)))
+	mux.HandleFunc("POST /admin/v1/tenants/{id}/rotate-code", guard(s.rotateTenantCode))
 	mux.HandleFunc("GET /admin/v1/tenants/{id}", guard(s.getTenant))
 }
 
@@ -84,7 +85,7 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 		writeAdminError(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 		return
 	}
-	t, created, err := s.Store.CreateTenant(r.Context(), store.TenantInput{
+	t, code, created, err := s.Store.CreateTenant(r.Context(), store.TenantInput{
 		ID: in.TenantID, Name: in.Name, Language: in.Language, Tier: in.Tier, OwnerEmail: in.OwnerEmail,
 	})
 	if err != nil {
@@ -99,12 +100,29 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 	if created {
 		status = http.StatusCreated
 	}
-	writeJSON(w, status, map[string]string{
-		"tenant_id":   t.ID.String(),
-		"status":      t.Status,
-		"server_url":  serverURL,
-		"access_code": t.AccessCode,
-	})
+	body := map[string]string{
+		"tenant_id":  t.ID.String(),
+		"status":     t.Status,
+		"server_url": serverURL,
+	}
+	if created {
+		body["access_code"] = code // shown once: only its hash is stored
+	}
+	writeJSON(w, status, body)
+}
+
+func (s *Server) rotateTenantCode(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeAdminError(w, http.StatusNotFound, "not_found", "unknown tenant")
+		return
+	}
+	code, err := s.Store.RotateTenantCode(r.Context(), id)
+	if err != nil {
+		adminStoreError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"tenant_id": id.String(), "access_code": code})
 }
 
 func (s *Server) setTenantStatus(status string) http.HandlerFunc {

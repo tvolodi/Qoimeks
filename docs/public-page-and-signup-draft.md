@@ -68,8 +68,14 @@ POST /tenants
     "owner_email": "string (<=254, optional)" }
   201 { "tenant_id", "status": "active", "server_url": "https://...",
         "access_code": "string" }
-  200 same body if tenant_id already exists (idempotent)
+  200 { "tenant_id", "status", "server_url" } if tenant_id already exists (idempotent);
+      NO access_code in the body
   400 invalid_request | 401 unauthorized | 429 rate_limited
+
+POST /tenants/{tenant_id}/rotate-code
+  200 { "tenant_id", "access_code": "string" }   (new code, shown once; the old one stops
+      working at once; not idempotent: every call rotates; allowed for suspended tenants)
+  401 unauthorized | 404 unknown tenant | 429 rate_limited
 
 POST /tenants/{tenant_id}/suspend   -> 200 { "status": "suspended" }   (idempotent)
 POST /tenants/{tenant_id}/resume    -> 200 { "status": "active" }      (idempotent)
@@ -83,8 +89,10 @@ Behaviour that is not obvious from the shapes:
 - `access_code` is the tenant's own code. The app and the web interface send it exactly like
   `ACCESS_TOKEN` (`Authorization: Bearer <code>`) and are served from the tenant's own schema.
   The shared `ACCESS_TOKEN` keeps serving the default schema, so single-tenant installs are
-  unchanged. A repeated POST returns the same stored code, so the site may ask again, but it
-  should keep the code (treat it like a password).
+  unchanged. The code is shown once: the server keeps only its hash, so it is returned only
+  by the 201 of the first POST and by `rotate-code`. A repeated POST (200) returns no code; the
+  site must store the code at once (treat it like a password). A lost code is replaced with
+  `rotate-code`, which gives a new one and invalidates the old.
 - A repeated POST returns the stored tenant and ignores changed `name`, `tier` or other fields;
   there is no update endpoint yet. Two simultaneous first POSTs give one 201 and one 200.
 - A suspended tenant gets 403 `{"error": "tenant suspended"}` on every `/api/*` call; its data
@@ -101,7 +109,7 @@ Still open: payment-to-tier mapping (the site's side).
   `PROVISIONING_TOKEN` (and optionally `PUBLIC_URL`) set in the server's `.env`; until then
   `/admin/v1` answers 404 on production.
 - Until the deploy you can still code against section 3 with a stub: `POST /tenants` returns 201
-  with `server_url: "https://qoimeks.ai-dala.com"` and a fake `access_code`; a repeat returns 200;
+  with `server_url: "https://qoimeks.ai-dala.com"` and a fake `access_code`; a repeat returns 200 without `access_code`; `rotate-code` returns a new fake code;
   `suspend`/`resume` flip the status.
 - A real, existing thing to link to: the static download page above, and (if the owner
   agrees) the v2 demo server once built.
