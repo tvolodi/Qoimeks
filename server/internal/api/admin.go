@@ -74,11 +74,13 @@ func adminStoreError(w http.ResponseWriter, r *http.Request, err error) {
 
 func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, adminMaxBody)
+	// "hostname" and other unknown fields are tolerated and ignored (one shared origin).
 	var in struct {
 		TenantID   string `json:"tenant_id"`
 		Name       string `json:"name"`
 		Language   string `json:"language"`
 		Tier       string `json:"tier"`
+		Plan       string `json:"plan"`
 		OwnerEmail string `json:"owner_email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -86,7 +88,7 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, code, created, err := s.Store.CreateTenant(r.Context(), store.TenantInput{
-		ID: in.TenantID, Name: in.Name, Language: in.Language, Tier: in.Tier, OwnerEmail: in.OwnerEmail,
+		ID: in.TenantID, Name: in.Name, Language: in.Language, Tier: in.Tier, Plan: in.Plan, OwnerEmail: in.OwnerEmail,
 	})
 	if err != nil {
 		adminStoreError(w, r, err)
@@ -151,10 +153,17 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
 		adminStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
-		"tenant_id":  t.ID.String(),
-		"status":     t.Status,
-		"tier":       t.Tier,
-		"created_at": t.CreatedAt.UTC().Format(time.RFC3339),
+	tier, plan := store.TierAndPlan(t.Tier)
+	var planOut any // null for demo
+	if plan != "" {
+		planOut = plan
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tenant_id":   t.ID.String(),
+		"status":      t.Status,
+		"tier":        tier,
+		"plan":        planOut,
+		"stored_tier": t.Tier,
+		"created_at":  t.CreatedAt.UTC().Format(time.RFC3339),
 	})
 }

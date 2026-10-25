@@ -39,14 +39,44 @@ type TenantInput struct {
 	ID         string
 	Name       string
 	Language   string
-	Tier       string
+	Tier       string // demo, production, or a stored tier value (legacy)
+	Plan       string // own_keys or all_inclusive; used only with Tier "production"
 	OwnerEmail string
 }
 
 var (
 	tenantLanguages = map[string]bool{"ru": true, "kk": true, "en": true}
-	tenantTiers     = map[string]bool{"demo": true, "hosted_own_keys": true, "hosted_all_inclusive": true}
 )
+
+// StoredTier maps the API's tier and plan to the stored tier. The three stored values
+// are accepted as they are and then plan is ignored; plan is also ignored with "demo".
+// An empty plan with "production" means own_keys.
+func StoredTier(tier, plan string) (string, error) {
+	switch tier {
+	case "demo", "hosted_own_keys", "hosted_all_inclusive":
+		return tier, nil
+	case "production":
+		switch plan {
+		case "", "own_keys":
+			return "hosted_own_keys", nil
+		case "all_inclusive":
+			return "hosted_all_inclusive", nil
+		}
+		return "", invalid("plan must be own_keys or all_inclusive")
+	}
+	return "", invalid("tier must be demo or production")
+}
+
+// TierAndPlan is the inverse of StoredTier: the API's tier and plan ("" for no plan).
+func TierAndPlan(stored string) (tier, plan string) {
+	switch stored {
+	case "hosted_own_keys":
+		return "production", "own_keys"
+	case "hosted_all_inclusive":
+		return "production", "all_inclusive"
+	}
+	return stored, ""
+}
 
 func (in TenantInput) validate() (uuid.UUID, error) {
 	id, err := uuid.Parse(in.ID)
@@ -58,10 +88,11 @@ func (in TenantInput) validate() (uuid.UUID, error) {
 		return uuid.Nil, invalid("name must be 1 to 200 characters")
 	case !tenantLanguages[in.Language]:
 		return uuid.Nil, invalid("language must be ru, kk or en")
-	case !tenantTiers[in.Tier]:
-		return uuid.Nil, invalid("tier must be demo, hosted_own_keys or hosted_all_inclusive")
 	case len(in.OwnerEmail) > 254:
 		return uuid.Nil, invalid("owner_email is too long")
+	}
+	if _, err := StoredTier(in.Tier, in.Plan); err != nil {
+		return uuid.Nil, err
 	}
 	return id, nil
 }
@@ -182,6 +213,10 @@ func (s *Store) CreateTenant(ctx context.Context, in TenantInput) (Tenant, strin
 		}
 	}()
 
+	tier, err := StoredTier(in.Tier, in.Plan)
+	if err != nil {
+		return Tenant{}, "", false, err
+	}
 	code, err := newCode()
 	if err != nil {
 		return Tenant{}, "", false, err
@@ -191,7 +226,7 @@ func (s *Store) CreateTenant(ctx context.Context, in TenantInput) (Tenant, strin
 		insert into tenants (tenant_id, name, language, tier, owner_email, schema_name, access_hash)
 		values ($1, $2, $3, $4, $5, $6, $7)
 		on conflict (tenant_id) do nothing`,
-		id, strings.TrimSpace(in.Name), in.Language, in.Tier, in.OwnerEmail, schema, hashCode(code))
+		id, strings.TrimSpace(in.Name), in.Language, tier, in.OwnerEmail, schema, hashCode(code))
 	if err != nil {
 		return Tenant{}, "", false, err
 	}
