@@ -126,6 +126,50 @@ func TestCreateTenantTwice(t *testing.T) {
 	}
 }
 
+func TestCreateTenantTierAndPlan(t *testing.T) {
+	_, url, _ := adminSetup(t, "shared")
+	for _, c := range []struct{ tier, plan, wantTier, wantPlan, stored string }{
+		{"demo", "", "demo", "", "demo"},
+		{"demo", "all_inclusive", "demo", "", "demo"},
+		{"production", "", "production", "own_keys", "hosted_own_keys"},
+		{"production", "own_keys", "production", "own_keys", "hosted_own_keys"},
+		{"production", "all_inclusive", "production", "all_inclusive", "hosted_all_inclusive"},
+		{"hosted_own_keys", "all_inclusive", "production", "own_keys", "hosted_own_keys"},
+		{"hosted_all_inclusive", "", "production", "all_inclusive", "hosted_all_inclusive"},
+	} {
+		t.Run(c.tier+"/"+c.plan, func(t *testing.T) {
+			body := map[string]string{
+				"tenant_id": uuid.NewString(), "name": "Склад", "language": "ru", "tier": c.tier,
+				"hostname": "acme.qoimeks.ai-dala.com",
+			}
+			if c.plan != "" {
+				body["plan"] = c.plan
+			}
+			call(t, "POST", url+"/admin/v1/tenants", provToken, body, 201, nil)
+			var got map[string]any
+			call(t, "GET", url+"/admin/v1/tenants/"+body["tenant_id"], provToken, nil, 200, &got)
+			var wantPlan any
+			if c.wantPlan != "" {
+				wantPlan = c.wantPlan
+			}
+			if got["tier"] != c.wantTier || got["plan"] != wantPlan || got["stored_tier"] != c.stored {
+				t.Fatalf("GET: %+v", got)
+			}
+			if _, has := got["hostname"]; has {
+				t.Fatalf("hostname was stored: %+v", got)
+			}
+			// Repeat with other tier and plan: idempotent, nothing changes.
+			body["tier"], body["plan"] = "production", "all_inclusive"
+			call(t, "POST", url+"/admin/v1/tenants", provToken, body, 200, nil)
+			var again map[string]any
+			call(t, "GET", url+"/admin/v1/tenants/"+body["tenant_id"], provToken, nil, 200, &again)
+			if again["stored_tier"] != c.stored {
+				t.Fatalf("repeat changed the tier: %+v", again)
+			}
+		})
+	}
+}
+
 func TestRotateCode(t *testing.T) {
 	_, url, _ := adminSetup(t, "shared")
 	body := newBody()
@@ -251,6 +295,7 @@ func TestAdminBadInput(t *testing.T) {
 		"bad uuid":     mod("tenant_id", "x"),
 		"bad language": mod("language", "de"),
 		"bad tier":     mod("tier", "gold"),
+		"bad plan":     func() map[string]string { b := mod("tier", "production"); b["plan"] = "gold"; return b }(),
 		"not json":     "{nope",
 		"oversized":    mod("name", strings.Repeat("a", 9<<10)),
 	} {

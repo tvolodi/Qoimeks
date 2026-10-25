@@ -44,6 +44,44 @@ func count(t *testing.T, st *store.Store, sql string, args ...any) int {
 	return n
 }
 
+func TestStoredTierMapping(t *testing.T) {
+	for _, c := range []struct{ tier, plan, want string }{
+		{"demo", "", "demo"},
+		{"demo", "all_inclusive", "demo"},
+		{"demo", "bogus", "demo"},
+		{"production", "", "hosted_own_keys"},
+		{"production", "own_keys", "hosted_own_keys"},
+		{"production", "all_inclusive", "hosted_all_inclusive"},
+		{"hosted_own_keys", "all_inclusive", "hosted_own_keys"},
+		{"hosted_all_inclusive", "own_keys", "hosted_all_inclusive"},
+	} {
+		got, err := store.StoredTier(c.tier, c.plan)
+		if err != nil || got != c.want {
+			t.Errorf("StoredTier(%q,%q) = %q, %v; want %q", c.tier, c.plan, got, err, c.want)
+		}
+	}
+	for _, c := range [][2]string{{"production", "gold"}, {"gold", ""}, {"", ""}} {
+		if _, err := store.StoredTier(c[0], c[1]); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("StoredTier(%q,%q) err = %v; want ErrInvalid", c[0], c[1], err)
+		}
+	}
+}
+
+func TestCreateTenantStoresMappedTier(t *testing.T) {
+	st := storetest.New(t)
+	for _, c := range []struct{ tier, plan, want string }{
+		{"production", "all_inclusive", "hosted_all_inclusive"},
+		{"production", "", "hosted_own_keys"},
+	} {
+		tn, _, _, err := st.CreateTenant(context.Background(), store.TenantInput{
+			ID: uuid.NewString(), Name: "X", Language: "ru", Tier: c.tier, Plan: c.plan,
+		})
+		if err != nil || tn.Tier != c.want {
+			t.Errorf("%s/%s: tier=%q err=%v; want %q", c.tier, c.plan, tn.Tier, err, c.want)
+		}
+	}
+}
+
 func TestCreateTenantIsIdempotentAndBuildsLedger(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)
