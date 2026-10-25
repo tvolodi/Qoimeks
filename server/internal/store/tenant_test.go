@@ -14,15 +14,15 @@ import (
 	"qoimeks/server/internal/store/storetest"
 )
 
-func newTenant(t *testing.T, st *store.Store) store.Tenant {
+func newTenant(t *testing.T, st *store.Store) (store.Tenant, string) {
 	t.Helper()
-	tn, created, err := st.CreateTenant(context.Background(), store.TenantInput{
+	tn, code, created, err := st.CreateTenant(context.Background(), store.TenantInput{
 		ID: uuid.NewString(), Name: "Склад", Language: "ru", Tier: "demo",
 	})
 	if err != nil || !created {
 		t.Fatalf("create tenant: created=%v err=%v", created, err)
 	}
-	return tn
+	return tn, code
 }
 
 func tenantStore(t *testing.T, st *store.Store, tn store.Tenant) *store.Store {
@@ -48,19 +48,19 @@ func TestCreateTenantIsIdempotentAndBuildsLedger(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)
 	in := store.TenantInput{ID: uuid.NewString(), Name: "Склад", Language: "kk", Tier: "hosted_own_keys", OwnerEmail: "a@b.kz"}
-	first, created, err := st.CreateTenant(ctx, in)
+	first, code, created, err := st.CreateTenant(ctx, in)
 	if err != nil || !created {
 		t.Fatalf("first: created=%v err=%v", created, err)
 	}
 	in.Name, in.Tier = "Другое", "demo"
-	again, created, err := st.CreateTenant(ctx, in)
+	again, againCode, created, err := st.CreateTenant(ctx, in)
 	if err != nil || created {
 		t.Fatalf("repeat: created=%v err=%v", created, err)
 	}
-	if again.AccessCode != first.AccessCode || again.Name != "Склад" || again.Tier != "hosted_own_keys" {
+	if againCode != "" || again.Name != "Склад" || again.Tier != "hosted_own_keys" {
 		t.Fatalf("repeat changed the tenant: %+v vs %+v", again, first)
 	}
-	if first.AccessCode == "" || first.Status != store.TenantActive {
+	if code == "" || first.Status != store.TenantActive {
 		t.Fatalf("bad tenant: %+v", first)
 	}
 	if n := count(t, st, `select count(*) from information_schema.schemata where schema_name like 't\_%'`); n != 1 {
@@ -95,7 +95,7 @@ func TestCreateTenantValidation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			in := store.TenantInput{ID: uuid.NewString(), Name: "n", Language: "ru", Tier: "demo"}
 			mod(&in)
-			if _, _, err := st.CreateTenant(context.Background(), in); !errors.Is(err, store.ErrInvalid) {
+			if _, _, _, err := st.CreateTenant(context.Background(), in); !errors.Is(err, store.ErrInvalid) {
 				t.Fatalf("err = %v, want ErrInvalid", err)
 			}
 		})
@@ -105,9 +105,9 @@ func TestCreateTenantValidation(t *testing.T) {
 func TestTenantStatusAndLookup(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)
-	tn := newTenant(t, st)
+	tn, code := newTenant(t, st)
 
-	got, err := st.TenantByCode(ctx, tn.AccessCode)
+	got, err := st.TenantByCode(ctx, code)
 	if err != nil || got.ID != tn.ID {
 		t.Fatalf("by code: %+v %v", got, err)
 	}
@@ -133,7 +133,8 @@ func TestTenantStatusAndLookup(t *testing.T) {
 func TestTenantsDoNotShareStock(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)
-	a, b := newTenant(t, st), newTenant(t, st)
+	a, _ := newTenant(t, st)
+	b, _ := newTenant(t, st)
 	sa, sb := tenantStore(t, st, a), tenantStore(t, st, b)
 
 	var skuID, locID int64
@@ -178,9 +179,7 @@ func TestConcurrentCreateTenant(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var tn store.Tenant
-			tn, created[i], errs[i] = st.CreateTenant(ctx, in)
-			codes[i] = tn.AccessCode
+			_, codes[i], created[i], errs[i] = st.CreateTenant(ctx, in)
 		}()
 	}
 	wg.Wait()
@@ -192,14 +191,19 @@ func TestConcurrentCreateTenant(t *testing.T) {
 		if created[i] {
 			made++
 		}
-		if codes[i] != codes[0] {
-			t.Fatal("different access codes")
+		if created[i] != (codes[i] != "") {
+			t.Fatalf("call %d: created=%v but code=%q", i, created[i], codes[i])
 		}
 	}
 	if made != 1 {
 		t.Fatalf("%d calls created the tenant, want 1", made)
 	}
-	tn, _ := st.TenantByCode(ctx, codes[0])
+	var tn store.Tenant
+	for i := range n {
+		if created[i] {
+			tn, _ = st.TenantByCode(ctx, codes[i])
+		}
+	}
 	if c := count(t, st, `select count(*) from information_schema.tables where table_schema = $1 and table_name in ('skus','locations','movements','balances','imports')`, tn.SchemaName); c != 5 {
 		t.Fatalf("tenant schema has %d of 5 tables", c)
 	}
@@ -208,7 +212,8 @@ func TestConcurrentCreateTenant(t *testing.T) {
 func TestLaterMigrationReachesTenants(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)
-	ts := tenantStore(t, st, newTenant(t, st))
+	tn, _ := newTenant(t, st)
+	ts := tenantStore(t, st, tn)
 
 	fsys := fstest.MapFS{
 		"009_later.sql":    {Data: []byte(`create table later_table (id int)`)},
@@ -232,7 +237,7 @@ func TestLaterMigrationReachesTenants(t *testing.T) {
 func TestMigrateTenantsCoversSuspended(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)
-	tn := newTenant(t, st)
+	tn, _ := newTenant(t, st)
 	if err := st.SetTenantStatus(ctx, tn.ID, store.TenantSuspended); err != nil {
 		t.Fatal(err)
 	}
@@ -277,5 +282,78 @@ func TestConcurrentMigrateOnFreshSchema(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestAccessCodeColumnDroppedAndOldCodesStillWork(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	// Rewind to the state under migration 005: a clear-text column beside the hash.
+	if _, err := st.Pool().Exec(ctx, `alter table tenants add column access_code text not null default ''`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool().Exec(ctx, `delete from schema_migrations where name = '006_tenants_drop_access_code.sql'`); err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.New()
+	const old = "legacy-code-1234"
+	if _, err := st.Pool().Exec(ctx, `
+		insert into tenants (tenant_id, name, language, tier, schema_name, access_hash, access_code)
+		values ($1, 'Старый', 'ru', 'demo', $2, sha256($3::bytea), $3)`,
+		id, "t_"+strings.ReplaceAll(id.String(), "-", ""), old); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, st, `select count(*) from information_schema.columns where table_name = 'tenants' and column_name = 'access_code'`); n != 0 {
+		t.Fatal("access_code column still exists")
+	}
+	got, err := st.TenantByCode(ctx, old)
+	if err != nil || got.ID != id {
+		t.Fatalf("old code after migration: %+v %v", got, err)
+	}
+}
+
+func TestCreateTenantReturnsCodeOnlyOnce(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	in := store.TenantInput{ID: uuid.NewString(), Name: "n", Language: "ru", Tier: "demo"}
+	_, code, created, err := st.CreateTenant(ctx, in)
+	if err != nil || !created || code == "" {
+		t.Fatalf("first: code=%q created=%v err=%v", code, created, err)
+	}
+	if n := count(t, st, `select count(*) from tenants where access_hash = sha256($1::bytea)`, code); n != 1 {
+		t.Fatal("hash of the returned code is not stored")
+	}
+	_, code2, created, err := st.CreateTenant(ctx, in)
+	if err != nil || created || code2 != "" {
+		t.Fatalf("repeat: code=%q created=%v err=%v", code2, created, err)
+	}
+}
+
+func TestRotateTenantCode(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	tn, old := newTenant(t, st)
+	if err := st.SetTenantStatus(ctx, tn.ID, store.TenantSuspended); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := st.RotateTenantCode(ctx, tn.ID)
+	if err != nil || fresh == "" || fresh == old {
+		t.Fatalf("rotate: %q %v", fresh, err)
+	}
+	if _, err := st.TenantByCode(ctx, old); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("old code: %v", err)
+	}
+	if got, err := st.TenantByCode(ctx, fresh); err != nil || got.ID != tn.ID || got.Status != store.TenantSuspended {
+		t.Fatalf("new code: %+v %v", got, err)
+	}
+	again, err := st.RotateTenantCode(ctx, tn.ID)
+	if err != nil || again == fresh {
+		t.Fatalf("second rotate: %q %v", again, err)
+	}
+	if _, err := st.RotateTenantCode(ctx, uuid.New()); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown id: %v", err)
 	}
 }

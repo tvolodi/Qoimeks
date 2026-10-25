@@ -30,7 +30,6 @@ type Tenant struct {
 	Tier       string
 	OwnerEmail string
 	SchemaName string
-	AccessCode string
 	Status     string
 	CreatedAt  time.Time
 }
@@ -137,34 +136,44 @@ func (s *Store) MigrateTenants(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-const tenantColumns = `tenant_id, name, language, tier, owner_email, schema_name, access_code, status, created_at`
+const tenantColumns = `tenant_id, name, language, tier, owner_email, schema_name, status, created_at`
 
 func scanTenant(row pgx.Row) (Tenant, error) {
 	var t Tenant
-	err := row.Scan(&t.ID, &t.Name, &t.Language, &t.Tier, &t.OwnerEmail, &t.SchemaName, &t.AccessCode, &t.Status, &t.CreatedAt)
+	err := row.Scan(&t.ID, &t.Name, &t.Language, &t.Tier, &t.OwnerEmail, &t.SchemaName, &t.Status, &t.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Tenant{}, ErrNotFound
 	}
 	return t, err
 }
 
+func newCode() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
+}
+
 // CreateTenant registers a tenant and builds its schema. It is idempotent by id: a
-// repeat returns the stored tenant (created=false) and ignores changed fields. The
+// repeat returns the stored tenant (created=false) and ignores changed fields. Only the
+// hash of the access code is stored, so the code is returned only when created=true
+// (otherwise it is empty); the caller has to pass it on at once. The
 // whole call holds a per-tenant advisory lock, so a concurrent repeat waits until the
 // schema is fully migrated.
-func (s *Store) CreateTenant(ctx context.Context, in TenantInput) (Tenant, bool, error) {
+func (s *Store) CreateTenant(ctx context.Context, in TenantInput) (Tenant, string, bool, error) {
 	id, err := in.validate()
 	if err != nil {
-		return Tenant{}, false, err
+		return Tenant{}, "", false, err
 	}
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
-		return Tenant{}, false, err
+		return Tenant{}, "", false, err
 	}
 	defer conn.Release()
 	lockKey := "qoimeks-tenant:" + id.String()
 	if _, err := conn.Exec(ctx, `select pg_advisory_lock(hashtext($1))`, lockKey); err != nil {
-		return Tenant{}, false, err
+		return Tenant{}, "", false, err
 	}
 	defer func() {
 		// Session lock: if the unlock fails the connection is broken, and closing it frees the lock.
@@ -173,34 +182,39 @@ func (s *Store) CreateTenant(ctx context.Context, in TenantInput) (Tenant, bool,
 		}
 	}()
 
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return Tenant{}, false, err
+	code, err := newCode()
+	if err != nil {
+		return Tenant{}, "", false, err
 	}
-	code := hex.EncodeToString(raw)
 	schema := schemaFor(id)
 	tag, err := conn.Exec(ctx, `
-		insert into tenants (tenant_id, name, language, tier, owner_email, schema_name, access_hash, access_code)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
+		insert into tenants (tenant_id, name, language, tier, owner_email, schema_name, access_hash)
+		values ($1, $2, $3, $4, $5, $6, $7)
 		on conflict (tenant_id) do nothing`,
-		id, strings.TrimSpace(in.Name), in.Language, in.Tier, in.OwnerEmail, schema, hashCode(code), code)
+		id, strings.TrimSpace(in.Name), in.Language, in.Tier, in.OwnerEmail, schema, hashCode(code))
 	if err != nil {
-		return Tenant{}, false, err
+		return Tenant{}, "", false, err
 	}
 	created := tag.RowsAffected() == 1
 
 	// Also on repeats, so a schema that was half built heals.
 	if _, err := conn.Exec(ctx, `create schema if not exists `+pgx.Identifier{schema}.Sanitize()); err != nil {
-		return Tenant{}, false, fmt.Errorf("create schema: %w", err)
+		return Tenant{}, "", false, fmt.Errorf("create schema: %w", err)
 	}
 	ts, err := s.TenantStore(ctx, schema)
 	if err != nil {
-		return Tenant{}, false, fmt.Errorf("migrate tenant schema: %w", err)
+		return Tenant{}, "", false, fmt.Errorf("migrate tenant schema: %w", err)
 	}
 	ts.Close()
 
 	t, err := scanTenant(conn.QueryRow(ctx, `select `+tenantColumns+` from tenants where tenant_id = $1`, id))
-	return t, created, err
+	if err != nil {
+		return Tenant{}, "", false, err
+	}
+	if !created {
+		code = ""
+	}
+	return t, code, created, nil
 }
 
 func (s *Store) Tenant(ctx context.Context, id uuid.UUID) (Tenant, error) {
@@ -226,4 +240,21 @@ func (s *Store) SetTenantStatus(ctx context.Context, id uuid.UUID, status string
 		return ErrNotFound
 	}
 	return nil
+}
+
+// RotateTenantCode replaces the tenant's access code and returns the new one, which is
+// not stored in clear. The old code stops working at once. Suspended tenants rotate too.
+func (s *Store) RotateTenantCode(ctx context.Context, id uuid.UUID) (string, error) {
+	code, err := newCode()
+	if err != nil {
+		return "", err
+	}
+	tag, err := s.pool.Exec(ctx, `update tenants set access_hash = $2, updated_at = now() where tenant_id = $1`, id, hashCode(code))
+	if err != nil {
+		return "", err
+	}
+	if tag.RowsAffected() == 0 {
+		return "", ErrNotFound
+	}
+	return code, nil
 }
