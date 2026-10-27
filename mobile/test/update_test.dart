@@ -39,6 +39,7 @@ class Fixture {
     String lang = 'ru',
     String url = _url,
     this.installed = 2,
+    bool isWeb = false,
   }) {
     settings = AppSettings(
       serverUrl: 'http://server',
@@ -59,6 +60,7 @@ class Fixture {
       },
       installed: () async => (name: '0.1.1', code: installed),
       now: () => clock,
+      isWeb: isWeb,
     );
   }
 
@@ -99,6 +101,31 @@ Future<void> pumpOperation(
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  group('on the web', () {
+    test('the check makes no request and offers no update', () async {
+      final f = Fixture(body: manifest(), isWeb: true);
+      expect(f.checker.enabled, isFalse);
+      await f.checker.checkOnStart();
+      expect(await f.checker.checkNow(), UpdateResult.off);
+      expect(f.fetched, isEmpty);
+      expect(f.checker.available, isNull);
+    });
+
+    testWidgets('no banner and no check button', (tester) async {
+      final f = Fixture(body: manifest(), isWeb: true);
+      await f.checker.checkOnStart();
+      await tester.pumpWidget(bannerApp(f));
+      expect(find.byKey(const Key('update_banner')), findsNothing);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SettingsScreen(settings: f.settings, updates: f.checker),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const Key('check_update')), findsNothing);
+    });
+  });
 
   group('parseManifest', () {
     test('reads a valid manifest', () {
