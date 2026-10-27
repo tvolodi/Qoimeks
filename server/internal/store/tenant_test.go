@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -153,14 +154,14 @@ func TestTenantStatusAndLookup(t *testing.T) {
 		t.Fatalf("miss: %v", err)
 	}
 	for _, status := range []string{store.TenantSuspended, store.TenantSuspended, store.TenantActive} {
-		if err := st.SetTenantStatus(ctx, tn.ID, status); err != nil {
+		if err := st.SetTenantStatus(ctx, tn.ID, status, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		if got, _ := st.Tenant(ctx, tn.ID); got.Status != status {
 			t.Fatalf("status %q, want %q", got.Status, status)
 		}
 	}
-	if err := st.SetTenantStatus(ctx, uuid.New(), store.TenantActive); !errors.Is(err, store.ErrNotFound) {
+	if err := st.SetTenantStatus(ctx, uuid.New(), store.TenantActive, time.Now()); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("unknown id: %v", err)
 	}
 	if _, err := st.Tenant(ctx, uuid.New()); !errors.Is(err, store.ErrNotFound) {
@@ -276,7 +277,7 @@ func TestMigrateTenantsCoversSuspended(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)
 	tn, _ := newTenant(t, st)
-	if err := st.SetTenantStatus(ctx, tn.ID, store.TenantSuspended); err != nil {
+	if err := st.SetTenantStatus(ctx, tn.ID, store.TenantSuspended, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate a tenant created before migration 004 existed.
@@ -374,7 +375,7 @@ func TestRotateTenantCode(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)
 	tn, old := newTenant(t, st)
-	if err := st.SetTenantStatus(ctx, tn.ID, store.TenantSuspended); err != nil {
+	if err := st.SetTenantStatus(ctx, tn.ID, store.TenantSuspended, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	fresh, err := st.RotateTenantCode(ctx, tn.ID)

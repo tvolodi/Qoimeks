@@ -66,7 +66,8 @@ POST /tenants
   { "tenant_id": "uuid", "name": "string (1..200)", "language": "ru|kk|en",
     "tier": "demo|production", "plan": "own_keys|all_inclusive (optional)",
     "hostname": "string (optional, accepted and ignored)",
-    "owner_email": "string (<=254, optional)" }
+    "owner_email": "string (<=254, optional)",
+    "expires_at": "RFC 3339 time (optional, demo only, must be in the future)" }
   201 { "tenant_id", "status": "active", "server_url": "https://...",
         "access_code": "string" }
   200 { "tenant_id", "status", "server_url" } if tenant_id already exists (idempotent);
@@ -80,7 +81,10 @@ POST /tenants/{tenant_id}/rotate-code
 
 POST /tenants/{tenant_id}/suspend   -> 200 { "status": "suspended" }   (idempotent)
 POST /tenants/{tenant_id}/resume    -> 200 { "status": "active" }      (idempotent)
-GET  /tenants/{tenant_id}           -> 200 { "tenant_id", "status", "tier": "demo|production",
+POST /tenants/{tenant_id}/expire    -> 200 { "status": "expired" }     (idempotent)
+  suspend and resume on an expired tenant -> 409 conflict "tenant expired"
+GET  /tenants/{tenant_id}           -> 200 { "tenant_id", "status", "expires_at": "RFC 3339|null",
+                                            "tier": "demo|production",
                                             "plan": "own_keys|all_inclusive|null",
                                             "stored_tier", "created_at" }
 404 for unknown tenant; errors: { "error": "code", "message": "string" }
@@ -100,6 +104,16 @@ Behaviour that is not obvious from the shapes:
   there is no update endpoint yet. Two simultaneous first POSTs give one 201 and one 200.
 - A suspended tenant gets 403 `{"error": "tenant suspended"}` on every `/api/*` call; its data
   is untouched and `resume` restores access at once.
+- Expiry: `expires_at` is accepted only with `tier=demo` (400 `invalid_request` with
+  `production`, a legacy `hosted_*` tier, a past time or a value that is not RFC 3339) and is
+  stored on the first POST only; a repeat ignores it like the other fields. Without it the
+  tenant never expires. `expire` sets the status `expired` (404 for an unknown id). An expired
+  tenant, and a demo tenant whose `expires_at` has passed (checked on every request, no
+  background job), gets 403 `{"error": "tenant expired"}` on every `/api/*` call; its data is
+  untouched. `GET` shows the status `expired` for both cases (derived when read; the stored row
+  is not rewritten) and `expires_at` (null if none). Whether expired data is kept or deleted is
+  an open retention decision, so `resume` and `suspend` on an expired tenant give 409. There is
+  no DELETE yet.
 - Tier and plan are stored as one of three values: `demo` -> `demo`; `production` + `own_keys`
   (or no plan) -> `hosted_own_keys`; `production` + `all_inclusive` -> `hosted_all_inclusive`.
   `plan` is ignored with `tier=demo` and defaults to `own_keys` with `production`; an invalid
