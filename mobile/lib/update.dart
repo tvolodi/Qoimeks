@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -105,6 +106,7 @@ class UpdateChecker extends ChangeNotifier {
     UrlOpener? open,
     InstalledVersion? installed,
     DateTime Function()? now,
+    this.isWeb = kIsWeb,
   }) : _fetch = fetch ?? _httpFetch,
        _open = open ?? _launchExternal,
        _installed = installed ?? _packageVersion,
@@ -112,6 +114,9 @@ class UpdateChecker extends ChangeNotifier {
 
   final AppSettings settings;
   final String manifestUrl;
+
+  /// A web app cannot install an APK, so on the web the check is off.
+  final bool isWeb;
   final ManifestFetcher _fetch;
   final UrlOpener _open;
   final InstalledVersion _installed;
@@ -122,7 +127,7 @@ class UpdateChecker extends ChangeNotifier {
   bool dismissed = false;
   bool _running = false;
 
-  bool get enabled => manifestUrl.isNotEmpty;
+  bool get enabled => !isWeb && manifestUrl.isNotEmpty;
 
   /// "0.1.1 (2)" for the settings screen.
   Future<String> installedLabel() async {

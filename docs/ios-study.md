@@ -162,3 +162,14 @@ Safari-tab workaround from section 2 (**SOURCED**, developer workaround).
 - How should the web app update (service worker caching to be designed)?
 - Cost of a cloud macOS build service for option B: not researched.
 - Does a TestFlight internal build avoid Apple review? **UNVERIFIED**
+
+## Status (T-0019)
+
+- The web build is prepared for the iPhone: the voice encoder is chosen at run time (Opus/WebM
+  where the recorder supports it, else AAC/M4A), the web manifest and `index.html` carry the
+  Qoimeks name, description and design colours (`#14304f` theme, `#f6f1e7` background), and the
+  APK update check is off on web. The design-system icons do not exist yet; the default icons stay.
+- `scripts/build-web.sh` runs `flutter build web --release --no-web-resources-cdn`, so CanvasKit is
+  served from the app and not from gstatic.com. The flag exists in the installed Flutter.
+- zxing-wasm is not self-hosted: the QR/barcode fallback loads from the jsDelivr CDN, and only on
+  browsers without `BarcodeDetector` (Safari 17+ uses the native detector and loads nothing).

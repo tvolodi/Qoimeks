@@ -22,19 +22,34 @@ abstract class VoiceCapture {
   void dispose();
 }
 
+/// The recording format: encoder and file name go together.
+typedef VoiceFormat = ({AudioEncoder encoder, String filename});
+
+/// On the web the browser decides: Opus in WebM where the recorder supports it (Chrome,
+/// Firefox), else AAC in MP4 (Safari on iPhone). Phones always record AAC to a .m4a file.
+VoiceFormat chooseVoiceFormat({required bool web, required bool opusSupported}) {
+  if (web && opusSupported) {
+    return (encoder: AudioEncoder.opus, filename: 'phrase.webm');
+  }
+  return (encoder: AudioEncoder.aacLc, filename: 'phrase.m4a');
+}
+
 class MicrophoneCapture implements VoiceCapture {
   final _recorder = AudioRecorder();
+  VoiceFormat _format = chooseVoiceFormat(web: false, opusSupported: false);
 
   @override
   Future<bool> start() async {
     if (!await _recorder.hasPermission()) return false;
-    // Browsers record Opus in WebM and ignore the path; phones record AAC to a temp file.
+    // Browsers ignore the path; phones record AAC to a temp file.
+    final opus = kIsWeb && await _recorder.isEncoderSupported(AudioEncoder.opus);
+    _format = chooseVoiceFormat(web: kIsWeb, opusSupported: opus);
     var path = '';
     if (!kIsWeb) {
-      path = '${(await getTemporaryDirectory()).path}/phrase.m4a';
+      path = '${(await getTemporaryDirectory()).path}/${_format.filename}';
     }
     await _recorder.start(
-      RecordConfig(encoder: kIsWeb ? AudioEncoder.opus : AudioEncoder.aacLc, numChannels: 1),
+      RecordConfig(encoder: _format.encoder, numChannels: 1),
       path: path,
     );
     return true;
@@ -47,7 +62,7 @@ class MicrophoneCapture implements VoiceCapture {
     // In a browser the recording is a blob: URL, on a phone it is a file.
     final bytes = kIsWeb ? await http.readBytes(Uri.parse(path)) : await File(path).readAsBytes();
     if (bytes.isEmpty) return null;
-    return Recording(bytes, kIsWeb ? 'phrase.webm' : 'phrase.m4a');
+    return Recording(bytes, _format.filename);
   }
 
   @override
