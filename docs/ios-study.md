@@ -173,3 +173,19 @@ Safari-tab workaround from section 2 (**SOURCED**, developer workaround).
   served from the app and not from gstatic.com. The flag exists in the installed Flutter.
 - zxing-wasm is not self-hosted: the QR/barcode fallback loads from the jsDelivr CDN, and only on
   browsers without `BarcodeDetector` (Safari 17+ uses the native detector and loads nothing).
+
+### Cache-busting of the web build (T-0021)
+
+Cloudflare tells browsers to reuse `.js`, fonts and images for up to 4 hours, and infra cannot
+change that for now. `scripts/build-web.sh` therefore runs `mobile/tool/cache_bust.dart` after
+the build: `flutter_bootstrap.js` loads `main.dart.js?v=<id>`, where the id is the first 12 hex
+characters of the SHA-256 of `main.dart.js`, so a phone fetches new code as soon as the code
+changes. The step fails (non-zero exit) if `flutter_bootstrap.js` no longer has the
+`"mainJsPath":"main.dart.js"` entry, e.g. after a Flutter upgrade.
+
+- Cache-busted: `main.dart.js`.
+- Not cache-busted: the `canvaskit/` engine files, fonts and images under `assets/`. They change
+  only on a Flutter upgrade or an asset change and can be stale for up to 4 h through Cloudflare.
+- Always fresh: the entry files `index.html`, `flutter_bootstrap.js`, `flutter_service_worker.js`,
+  `version.json`, `manifest.json`.
+- Staging build: `scripts/build-web.sh --base-href /web/` (all arguments go to `flutter build web`).
