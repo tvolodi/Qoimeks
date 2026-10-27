@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import 'design/tokens.dart';
 import 'l10n.dart';
 
 sealed class ScanResult {
@@ -76,26 +77,51 @@ class _ScannerPageState extends State<ScannerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
-      body: MobileScanner(
-        controller: _controller,
-        onDetect: (capture) {
-          for (final code in capture.barcodes) {
-            final text = code.rawValue;
-            if (text != null && text.isNotEmpty) {
-              _finish(ScanText(text));
-              return;
-            }
-          }
-        },
-        // The builder runs during build: leave the route after the frame.
-        errorBuilder: (context, error) {
-          final result =
-              error.errorCode == MobileScannerErrorCode.permissionDenied
-              ? const ScanPermissionDenied()
-              : const ScanNoCamera();
-          WidgetsBinding.instance.addPostFrameCallback((_) => _finish(result));
-          return const SizedBox.shrink();
-        },
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: (capture) {
+              for (final code in capture.barcodes) {
+                final text = code.rawValue;
+                if (text != null && text.isNotEmpty) {
+                  _finish(ScanText(text));
+                  return;
+                }
+              }
+            },
+            // The builder runs during build: leave the route after the frame.
+            errorBuilder: (context, error) {
+              final result =
+                  error.errorCode == MobileScannerErrorCode.permissionDenied
+                  ? const ScanPermissionDenied()
+                  : const ScanNoCamera();
+              WidgetsBinding.instance.addPostFrameCallback(
+                (_) => _finish(result),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+          const IgnorePointer(child: Center(child: ScannerFrame())),
+        ],
+      ),
+    );
+  }
+}
+
+/// The frame that shows where to hold the QR code: the one place besides the logo where amber is used.
+class ScannerFrame extends StatelessWidget {
+  const ScannerFrame({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: AppSpace.s16 * 4,
+      height: AppSpace.s16 * 4,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: LightColors.brand, width: AppSpace.s1),
       ),
     );
   }

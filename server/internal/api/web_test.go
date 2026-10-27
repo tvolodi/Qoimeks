@@ -185,3 +185,34 @@ assert.doesNotThrow(() => qrMatrix(setupPayload('https://qoimeks.ai-dala.com', '
 		t.Fatalf("node: %v: %s", err, out)
 	}
 }
+
+// The page carries the design tokens inline (light theme) and asks the network for nothing.
+func TestWebPageUsesInlineDesignTokens(t *testing.T) {
+	html, err := os.ReadFile("web.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(html)
+	for _, want := range []string{
+		"--c-primary: #14304f;", "--c-on-primary: #ffffff;", "--c-bg: #f6f1e7;", "--font-mono:", "--size-touch-min: 48px;",
+		"background: var(--c-primary)", "td.num, th.num { text-align: right;",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("web.html lacks %q", want)
+		}
+	}
+	if strings.Contains(page, `data-theme="dark"`) {
+		t.Error("the page is light only")
+	}
+	if m := regexp.MustCompile(`(?i)<(link|script|img|iframe)[^>]+(src|href)\s*=\s*["']?(https?:)?//`).FindString(page); m != "" {
+		t.Errorf("web.html makes an external request: %s", m)
+	}
+	if strings.Contains(page, "@import") || strings.Contains(page, "url(http") {
+		t.Error("web.html imports an external stylesheet or font")
+	}
+	// Colours come from tokens: after the token block no hex literal is left in the rules.
+	rules := page[strings.Index(page, "* { box-sizing"):strings.Index(page, "</style>")]
+	if hex := regexp.MustCompile(`#[0-9a-fA-F]{3,6}\b`).FindString(rules); hex != "" {
+		t.Errorf("colour literal %s outside the token block", hex)
+	}
+}

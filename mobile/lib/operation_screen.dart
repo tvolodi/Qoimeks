@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import 'api.dart';
+import 'design/status.dart';
+import 'design/theme.dart';
+import 'design/tokens.dart';
 import 'history_screen.dart';
 import 'l10n.dart';
 import 'picker.dart';
@@ -93,11 +96,7 @@ class _OperationScreenState extends State<OperationScreen> {
     return 0;
   }
 
-  void _toast(String text) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text)));
-  }
+  void _toast(String text, StatusKind kind) => showStatusSnack(context, text, kind);
 
   void _setSku(Sku? sku) {
     setState(() {
@@ -125,6 +124,7 @@ class _OperationScreenState extends State<OperationScreen> {
       items: _catalog!.skus,
       titleOf: (s) => s.name,
       subtitleOf: (s) => '${s.code} · ${s.unit}',
+      monoSubtitle: true,
     );
     if (sku != null) {
       _candidates = const [];
@@ -141,6 +141,7 @@ class _OperationScreenState extends State<OperationScreen> {
       items: _catalog!.locations,
       titleOf: (l) => l.code,
       subtitleOf: (l) => l.name,
+      monoTitle: true,
     );
   }
 
@@ -151,7 +152,7 @@ class _OperationScreenState extends State<OperationScreen> {
       if (started) {
         setState(() => _mic = _Mic.recording);
       } else {
-        _toast(_s('err_mic'));
+        _toast(_s('err_mic'), StatusKind.error);
       }
       return;
     }
@@ -162,7 +163,7 @@ class _OperationScreenState extends State<OperationScreen> {
       final draft = await widget.api.voice(rec.bytes, rec.filename, widget.settings.lang);
       if (mounted) _applyDraft(draft);
     } catch (e) {
-      if (mounted) _toast(_s.error(e));
+      if (mounted) _toast(_s.error(e), StatusKind.error);
     } finally {
       if (mounted) setState(() => _mic = _Mic.idle);
     }
@@ -221,11 +222,11 @@ class _OperationScreenState extends State<OperationScreen> {
       );
       if (!mounted) return;
       final after = m.balances.map((b) => '${b.locationCode}: ${fmtQty(b.qty)} ${m.unit}').join(', ');
-      _toast('${_s('posted')} · $after');
+      _toast('${_s('posted')} · $after', StatusKind.success);
       _reset();
     } on ApiException catch (e) {
       if (!mounted) return;
-      _toast(_s.error(e));
+      _toast(_s.error(e), StatusKind.error);
       // 409: this draft was already saved by an earlier attempt, start a new one.
       if (e.status == 409) _reset();
     } finally {
@@ -269,14 +270,14 @@ class _OperationScreenState extends State<OperationScreen> {
     if (_loadError == null) return const Center(child: CircularProgressIndicator());
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpace.s6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(_s('loading_failed'), style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(_s.error(_loadError!), textAlign: TextAlign.center),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpace.s2),
+            StatusBanner(kind: StatusKind.error, text: _s.error(_loadError!)),
+            const SizedBox(height: AppSpace.s4),
             FilledButton(onPressed: _loadCatalog, child: Text(_s('retry'))),
           ],
         ),
@@ -286,19 +287,21 @@ class _OperationScreenState extends State<OperationScreen> {
 
   Widget _buildForm(BuildContext context) {
     final theme = Theme.of(context);
-    const gap = SizedBox(height: 16);
+    const gap = SizedBox(height: AppSpace.s4);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpace.s4),
       children: [
         if (_mic != _Mic.idle) ...[
-          Card(
-            color: theme.colorScheme.errorContainer,
-            child: ListTile(
-              leading: _mic == _Mic.recording
-                  ? Icon(Icons.mic, color: theme.colorScheme.error)
-                  : const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)),
-              title: Text(_s(_mic == _Mic.recording ? 'listening' : 'recognizing')),
-            ),
+          StatusBanner(
+            kind: StatusKind.info,
+            leading: _mic == _Mic.recording
+                ? const Icon(Icons.mic, color: LightColors.infoText, size: AppSize.icon)
+                : const SizedBox(
+                    width: AppSize.icon,
+                    height: AppSize.icon,
+                    child: CircularProgressIndicator(strokeWidth: AppSpace.s1, color: LightColors.infoText),
+                  ),
+            text: _s(_mic == _Mic.recording ? 'listening' : 'recognizing'),
           ),
           gap,
         ],
@@ -313,8 +316,8 @@ class _OperationScreenState extends State<OperationScreen> {
           gap,
         ],
         Wrap(
-          spacing: 8,
-          runSpacing: 4,
+          spacing: AppSpace.s2,
+          runSpacing: AppSpace.s2,
           children: [
             for (final k in kinds)
               ChoiceChip(
@@ -329,18 +332,25 @@ class _OperationScreenState extends State<OperationScreen> {
         PickerField(
           key: const Key('sku'),
           label: _s('sku'),
-          text: _sku == null ? null : '${_sku!.name}\n${_sku!.code}',
+          text: _sku?.name,
+          code: _sku?.code,
           onTap: _pickSku,
         ),
         if (_candidates.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(_s('which_sku'), style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.error)),
+          const SizedBox(height: AppSpace.s2),
+          StatusBanner(kind: StatusKind.warning, text: _s('which_sku')),
+          const SizedBox(height: AppSpace.s2),
           Wrap(
-            spacing: 8,
+            spacing: AppSpace.s2,
+            runSpacing: AppSpace.s2,
             children: [
               for (final c in _candidates)
                 ActionChip(
-                  label: Text('${c.name} (${c.code})'),
+                  label: Text.rich(TextSpan(children: [
+                    TextSpan(text: '${c.name} ('),
+                    TextSpan(text: c.code, style: monoStyle()),
+                    const TextSpan(text: ')'),
+                  ])),
                   onPressed: () {
                     _candidates = const [];
                     _setSku(c);
@@ -381,15 +391,14 @@ class _OperationScreenState extends State<OperationScreen> {
           key: const Key('qty'),
           controller: _qty,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          style: theme.textTheme.headlineSmall,
+          style: monoStyle(theme.textTheme.headlineSmall),
           decoration: InputDecoration(
             labelText: _s(_kind == 'adjustment' ? 'qty_counted' : 'qty'),
             suffixText: _sku?.unit,
-            border: const OutlineInputBorder(),
           ),
           onChanged: (_) => setState(() {}),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpace.s3),
         ..._buildBalanceHint(theme),
       ],
     );
@@ -400,6 +409,7 @@ class _OperationScreenState extends State<OperationScreen> {
     final sku = _sku;
     if (rows == null || sku == null) return const [];
     final here = _balanceHere;
+    final mono = monoStyle();
     final elsewhere = [
       for (final b in rows)
         if (b.locationId != _location?.id) '${b.locationCode} (${fmtQty(b.qty)})',
@@ -409,55 +419,77 @@ class _OperationScreenState extends State<OperationScreen> {
     final goesNegative = here != null && q != null && (_kind == 'issue' || _kind == 'transfer') && q > here;
     return [
       if (here != null)
-        Text('${_location!.code} — ${_s('balance')} ${fmtQty(here)} ${sku.unit}', style: theme.textTheme.bodyLarge),
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(text: '${_location!.code} — ', style: mono),
+            TextSpan(text: '${_s('balance')} '),
+            TextSpan(text: fmtQty(here), style: mono),
+            TextSpan(text: ' ${sku.unit}'),
+          ]),
+          style: theme.textTheme.bodyLarge,
+        ),
       if (alt != null && alt != _location)
-        Text('${_s('look_also')} ${alt.code}', style: theme.textTheme.bodyMedium),
-      if (elsewhere.isNotEmpty) Text('${_s('also_at')} ${elsewhere.join(', ')}', style: theme.textTheme.bodyMedium),
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(text: '${_s('look_also')} '),
+            TextSpan(text: alt.code, style: mono),
+          ]),
+          style: theme.textTheme.bodyMedium,
+        ),
+      if (elsewhere.isNotEmpty)
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(text: '${_s('also_at')} '),
+            TextSpan(text: elsewhere.join(', '), style: mono),
+          ]),
+          style: theme.textTheme.bodyMedium,
+        ),
       if (goesNegative)
         Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            _s('will_be_negative'),
-            style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.error, fontWeight: FontWeight.bold),
-          ),
+          padding: const EdgeInsets.only(top: AppSpace.s2),
+          child: StatusBanner(kind: StatusKind.warning, text: _s('will_be_negative')),
         ),
     ];
   }
 
   Widget _buildActions(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final recording = _mic == _Mic.recording;
+    final onMic = _mic == _Mic.busy || _posting ? null : _toggleMic;
+    final micContent = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(recording ? Icons.stop : Icons.mic, size: AppSize.icon),
+        Text(_s('speak'), style: Theme.of(context).textTheme.labelMedium),
+      ],
+    );
+    final micStyle = ButtonStyle(padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: AppSpace.s1)));
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        padding: const EdgeInsets.fromLTRB(AppSpace.s4, AppSpace.s2, AppSpace.s4, AppSpace.s3),
         child: Row(
           children: [
             SizedBox(
-              width: 72,
-              height: 64,
-              child: FilledButton(
-                key: const Key('mic'),
-                style: FilledButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  backgroundColor: _mic == _Mic.recording ? scheme.error : scheme.tertiary,
-                  foregroundColor: _mic == _Mic.recording ? scheme.onError : scheme.onTertiary,
-                ),
-                onPressed: _mic == _Mic.busy || _posting ? null : _toggleMic,
-                child: Tooltip(
-                  message: _s('speak'),
-                  child: Icon(_mic == _Mic.recording ? Icons.stop : Icons.mic, size: 32),
-                ),
-              ),
+              width: AppSpace.s16 + AppSpace.s6,
+              height: AppSpace.s16,
+              // Secondary while idle; the primary look shows that it is recording.
+              child: recording
+                  ? FilledButton(key: const Key('mic'), style: micStyle, onPressed: onMic, child: micContent)
+                  : OutlinedButton(key: const Key('mic'), style: micStyle, onPressed: onMic, child: micContent),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpace.s3),
             Expanded(
               child: SizedBox(
-                height: 64,
+                height: AppSpace.s16,
                 child: FilledButton(
                   key: const Key('post'),
                   onPressed: _valid && !_posting && _mic == _Mic.idle ? _submit : null,
                   child: _posting
-                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3))
-                      : Text(_s('post'), style: const TextStyle(fontSize: 20)),
+                      ? const SizedBox(
+                          width: AppSize.icon,
+                          height: AppSize.icon,
+                          child: CircularProgressIndicator(strokeWidth: AppSpace.s1, color: LightColors.onPrimary),
+                        )
+                      : Text(_s('post'), style: const TextStyle(fontSize: AppText.txl)),
                 ),
               ),
             ),

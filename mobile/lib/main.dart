@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'api.dart';
+import 'design/theme.dart';
 import 'operation_screen.dart';
 import 'settings.dart';
 import 'settings_screen.dart';
@@ -31,7 +32,7 @@ class QoimeksApp extends StatelessWidget {
       builder: (context, _) => MaterialApp(
         title: 'Qoimeks',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
+        theme: buildTheme(),
         locale: Locale(settings.lang),
         supportedLocales: const [Locale('ru'), Locale('kk')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
