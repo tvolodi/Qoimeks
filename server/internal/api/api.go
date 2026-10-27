@@ -37,6 +37,9 @@ type Server struct {
 	ProvisioningToken string
 	// PublicURL is the server address returned to the site as a tenant's server_url.
 	PublicURL string
+	// ProviderKeys are the configured speech and language-model keys; feedback is
+	// scrubbed of them before it is stored.
+	ProviderKeys []string
 
 	now     func() time.Time // tests replace the clock of the admin rate limiter
 	mu      sync.Mutex
@@ -91,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/movements/{id}/reverse", s.reverseMovement)
 	mux.HandleFunc("POST /api/parse", s.parseText)
 	mux.HandleFunc("POST /api/voice", s.parseVoice)
+	mux.HandleFunc("POST /api/feedback", s.postFeedback)
 	s.webRoutes(mux)
 	s.importRoutes(mux)
 	s.adminRoutes(mux)

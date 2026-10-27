@@ -97,6 +97,15 @@ func main() {
 		slog.Warn("no ELEVENLABS_API_KEY or STT_API_KEY: voice input is disabled")
 	}
 
+	// Every key the server may hold, set or not; short and empty values are ignored later.
+	for _, name := range []string{"LLM_API_KEY", "STT_API_KEY", "ELEVENLABS_API_KEY", "ELEVENLAB_API_KEY",
+		"elevenlabs_api_key", "elevenlab_api_key"} {
+		srv.ProviderKeys = append(srv.ProviderKeys, os.Getenv(name))
+	}
+	for _, p := range parse.Providers {
+		srv.ProviderKeys = append(srv.ProviderKeys, os.Getenv(p.KeyVar))
+	}
+
 	httpServer := &http.Server{
 		Addr:              config.Get(":8080", "LISTEN_ADDR"),
 		Handler:           srv.Handler(),
