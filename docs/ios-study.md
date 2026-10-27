@@ -189,3 +189,12 @@ changes. The step fails (non-zero exit) if `flutter_bootstrap.js` no longer has 
 - Always fresh: the entry files `index.html`, `flutter_bootstrap.js`, `flutter_service_worker.js`,
   `version.json`, `manifest.json`.
 - Staging build: `scripts/build-web.sh --base-href /web/` (all arguments go to `flutter build web`).
+
+### Default server address (T-0022)
+
+The compile-time define `DEFAULT_SERVER_URL` is prefilled in the server field when no server is
+saved yet (default empty = `http://`, as on Android). Production web build:
+
+```
+scripts/build-web.sh --dart-define=DEFAULT_SERVER_URL=https://qoimeks.ai-dala.com
+```
