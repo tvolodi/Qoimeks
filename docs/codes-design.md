@@ -145,11 +145,28 @@ touch targets ≥ 48 px; status by icon + word + colour; works from 360 px.
 ## 5. Excel import / export
 
 Small (include in the build):
-- **Export** (`/api/stock/export`): add a "Коды / Codes" column per row (SKU's codes joined by `; `), and for
-  locations in the locations sheet if there is one. Read-only data, no effect on `check`/`load`.
-- **Import, optional column "Штрихкод"** on the SKU sheet: for each row a code is assigned with `created_by` =
-  operator of the import. A duplicate or invalid code is a **row error in `check`** (`check` changes nothing and
-  reports it, same place as other row errors); `load` applies exactly what was checked.
+- **Export** (`/api/stock/export`, `importer/export.go` `Write`): the export has one stock sheet of
+  SKU × location rows. Add a column "Коды / Codes" after the existing ones with the SKU's active codes joined
+  by `; `. **Location codes are not exported in v1** (there is no locations sheet). Read-only, no effect on
+  `check`/`load`.
+- **Import, optional column "Штрихкод"** (`importer/importer.go`). The workbook has one sheet per week, newest
+  first, and each sheet has fixed columns A–G after the header row that starts with "Артикул". The importer looks
+  in that header row for the cell with the text "Штрихкод"; if present, that column holds the SKU's code, if
+  absent nothing changes (old workbooks import as before). Only one code per cell.
+  - Parsing: `ImportSKU` (passed to `store.Import` as `[]store.ImportSKU`) gets a field `Code string`; empty
+    cell = no code. The code type is detected by shape (see below).
+  - `check` (`Result.Warnings`, plain strings, changes nothing) warns about: a code longer than the length
+    limit of section 2; a code owned by another SKU or location ("Строка 12: код 4600… уже занят товаром «X»");
+    the same code on two different SKUs in the file. A 13/8-digit code with a wrong check digit is not an error;
+    it is stored as `manual`. Warnings do not block `load`.
+  - `load`: in the same transaction as the stock rows, `store.Import` assigns each code with `created_by` =
+    operator of the import. A code that is a duplicate (owned by another object) is **skipped with a warning;
+    the row's stock is still loaded** — the workbook is the authority on balances, a bad code must not stop it.
+  - SKU already has a different active code and the workbook gives a new one: the new code is **added as one
+    more code** (several codes per object are allowed); nothing is removed.
+  - The same code on two rows of the same SKU (an SKU can span several rows), or a code the SKU already has:
+    a no-op (same object → 200 rule of section 3).
+  - `load` applies exactly what was checked: the same parsing and the same skip rules.
 
 Not small (leave out of v1):
 - Several codes per cell/row, or a separate "Codes" sheet with `object, code_type, code` — needs a new sheet
@@ -168,7 +185,7 @@ Not small (leave out of v1):
 | Store: assign (transaction: object exists, insert, map unique violation to a conflict that carries the owner), list, remove, lookup; EAN check digit helper | small–medium |
 | API handlers, errors with `reason`/`owner`, tests with the tenant-schema harness (two tenants may use the same code) | medium |
 | Catalog/export additions (codes in `GET /api/catalog`, export column) | small |
-| Import optional column + row errors | medium |
+| Import optional column "Штрихкод": `ImportSKU.Code`, warnings in `check`, assignment in the `load` transaction | medium |
 | Mobile: scan-to-find, code list, assign, error banners, l10n ru/kk, tests with a fake API | medium–large (largest part) |
 | Web panel + search box | medium |
 | Excel several-codes sheet, code move, offline lookup cache | large — later |
