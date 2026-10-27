@@ -1,26 +1,41 @@
 import 'package:flutter/material.dart';
 
+import 'design/theme.dart';
+import 'design/tokens.dart';
+
 /// A form field that shows the chosen value and opens a search page on tap.
 class PickerField extends StatelessWidget {
-  const PickerField({super.key, required this.label, required this.text, required this.onTap});
+  const PickerField({super.key, required this.label, required this.text, required this.onTap, this.code});
 
   final String label;
+
+  /// The chosen value. Without [code] it is itself a code (a location) and is shown in monospace.
   final String? text;
+
+  /// A code shown under [text] in the monospace font.
+  final String? code;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       child: InputDecorator(
         isEmpty: text == null,
         decoration: InputDecoration(
           labelText: label,
-          border: const OutlineInputBorder(),
           suffixIcon: const Icon(Icons.search),
         ),
-        child: Text(text ?? '', style: Theme.of(context).textTheme.titleMedium),
+        child: code == null
+            ? Text(text ?? '', style: monoStyle(Theme.of(context).textTheme.titleMedium))
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(text ?? '', style: Theme.of(context).textTheme.titleMedium),
+                  Text(code!, style: monoStyle(Theme.of(context).textTheme.bodyMedium)),
+                ],
+              ),
       ),
     );
   }
@@ -35,6 +50,8 @@ Future<T?> pick<T>(
   required List<T> items,
   required String Function(T) titleOf,
   required String Function(T) subtitleOf,
+  bool monoTitle = false,
+  bool monoSubtitle = false,
 }) {
   return Navigator.of(context).push<T>(MaterialPageRoute(
     fullscreenDialog: true,
@@ -45,6 +62,8 @@ Future<T?> pick<T>(
       items: items,
       titleOf: titleOf,
       subtitleOf: subtitleOf,
+      monoTitle: monoTitle,
+      monoSubtitle: monoSubtitle,
     ),
   ));
 }
@@ -57,6 +76,8 @@ class _PickerPage<T> extends StatefulWidget {
     required this.items,
     required this.titleOf,
     required this.subtitleOf,
+    required this.monoTitle,
+    required this.monoSubtitle,
   });
 
   final String title;
@@ -65,6 +86,8 @@ class _PickerPage<T> extends StatefulWidget {
   final List<T> items;
   final String Function(T) titleOf;
   final String Function(T) subtitleOf;
+  final bool monoTitle;
+  final bool monoSubtitle;
 
   @override
   State<_PickerPage<T>> createState() => _PickerPageState<T>();
@@ -93,14 +116,13 @@ class _PickerPageState<T> extends State<_PickerPage<T>> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(AppSpace.s3),
             child: TextField(
               key: const Key('picker_search'),
               autofocus: true,
               decoration: InputDecoration(
-                hintText: widget.searchHint,
+                labelText: widget.searchHint,
                 prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder(),
               ),
               onChanged: (v) => setState(() => _query = v),
             ),
@@ -112,9 +134,21 @@ class _PickerPageState<T> extends State<_PickerPage<T>> {
                     itemCount: found.length,
                     itemBuilder: (context, i) {
                       final subtitle = widget.subtitleOf(found[i]);
+                      final text = Theme.of(context).textTheme;
                       return ListTile(
-                        title: Text(widget.titleOf(found[i])),
-                        subtitle: subtitle.isEmpty ? null : Text(subtitle),
+                        minTileHeight: AppSize.touchMin,
+                        title: Text(
+                          widget.titleOf(found[i]),
+                          style: widget.monoTitle ? monoStyle(text.bodyLarge) : null,
+                        ),
+                        subtitle: subtitle.isEmpty
+                            ? null
+                            : Text(
+                                subtitle,
+                                style: widget.monoSubtitle
+                                    ? monoStyle(text.bodyMedium?.copyWith(color: LightColors.textSoft))
+                                    : null,
+                              ),
                         onTap: () => Navigator.of(context).pop(found[i]),
                       );
                     },

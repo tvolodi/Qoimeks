@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'design/status.dart';
+import 'design/tokens.dart';
 import 'settings.dart';
 
 /// Where the release manifest (`latest.json`) is read from. Set with
@@ -201,35 +203,36 @@ class UpdateBanner extends StatelessWidget {
         if (info == null || checker.dismissed) return const SizedBox.shrink();
         final s = checker.settings.s;
         final notes = info.notesFor(checker.settings.lang);
-        final scheme = Theme.of(context).colorScheme;
-        final color = checker.mandatory
-            ? scheme.errorContainer
-            : scheme.primaryContainer;
+        // Required updates are an error, optional ones are information.
+        final kind = checker.mandatory ? StatusKind.error : StatusKind.info;
+        final textStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(color: kind.foreground);
         return Material(
           key: const Key('update_banner'),
-          color: color,
+          color: kind.background,
           child: InkWell(
             onTap: checker.openUpdate,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+              padding: const EdgeInsets.fromLTRB(AppSpace.s4, AppSpace.s2, AppSpace.s1, AppSpace.s2),
               child: Row(
                 children: [
+                  Icon(kind.icon, color: kind.foreground, size: AppSize.icon),
+                  const SizedBox(width: AppSpace.s3),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           '${s(checker.mandatory ? 'update_required' : 'update_available')}: ${info.versionName}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          style: textStyle.copyWith(fontWeight: FontWeight.w700),
                         ),
-                        if (notes.isNotEmpty) Text(notes),
+                        if (notes.isNotEmpty) Text(notes, style: textStyle),
                       ],
                     ),
                   ),
                   if (!checker.mandatory)
                     IconButton(
                       key: const Key('update_dismiss'),
-                      icon: const Icon(Icons.close),
+                      icon: Icon(Icons.close, color: kind.foreground),
                       onPressed: checker.dismiss,
                     ),
                 ],
