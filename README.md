@@ -61,6 +61,20 @@ or Claude subscription; it is created and billed separately on the provider's de
 Without a speech key the app works from the keyboard only. With a speech key but no
 language model, the microphone shows what was heard and the operator fills the form by hand.
 
+### Feedback
+
+`POST /api/feedback` (bearer access code, like the other `/api` routes) appends a report from
+the app to the append-only `feedback` table of the caller's schema (the tenant's own, or the
+default one) and answers `201 {"id": N}`. JSON body: `text` (required, 1–4000 characters),
+`voice_text` (optional, up to 4000, a transcribed voice note), `app_version`, `android_version`,
+`device`, `operator`, `screen`, `provider` (each up to 200 characters) and `errors` (an array of
+at most 50 entries, strings or objects). Too long a text, more than 50 errors or a body that is
+not JSON gives 400. Rows get `kind` `user`; the table also has room for server-recorded kinds
+(`speech_error`, `llm_error`, `post_error`). UPDATE, DELETE and TRUNCATE on it are rejected by
+the database. Before storing, every string in the request has the server `ACCESS_TOKEN`, the
+code the request was sent with (a tenant's code), every configured provider key of 8+ characters,
+`Bearer <token>` and `sk-…` keys replaced with `[redacted]`.
+
 ## Stock overview and Excel in the browser
 
 The server's root page (`http://<server>:8080/`) is the web interface. The button at the top
