@@ -148,8 +148,13 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
-  ApiClient(String baseUrl, {String accessCode = '', http.Client? client})
-      : _base = baseUrl.trim().replaceAll(RegExp(r'/+$'), ''),
+  ApiClient(
+    String baseUrl, {
+    String accessCode = '',
+    http.Client? client,
+    this.onSuccess,
+    this.onError,
+  })  : _base = baseUrl.trim().replaceAll(RegExp(r'/+$'), ''),
         _auth = accessCode.isEmpty ? const {} : {'Authorization': 'Bearer $accessCode'},
         _http = client ?? http.Client();
 
@@ -157,12 +162,18 @@ class ApiClient {
   final Map<String, String> _auth;
   final http.Client _http;
 
-  Future<dynamic> _send(Future<http.Response> Function() request) async {
+  /// Called after a call succeeded / failed (not for feedback itself).
+  final void Function()? onSuccess;
+  final void Function(String path, ApiException error)? onError;
+
+  Future<dynamic> _send(Future<http.Response> Function() request, {String path = '', bool observe = true}) async {
     final http.Response resp;
     try {
       resp = await request().timeout(const Duration(seconds: 90));
     } catch (e) {
-      throw ApiException(0, e.toString());
+      final err = ApiException(0, e.toString());
+      if (observe) onError?.call(path, err);
+      throw err;
     }
     dynamic body;
     try {
@@ -171,18 +182,29 @@ class ApiClient {
       body = null;
     }
     if (resp.statusCode >= 400) {
-      throw ApiException(resp.statusCode, body is Map ? '${body['error']}' : 'HTTP ${resp.statusCode}');
+      final err = ApiException(resp.statusCode, body is Map ? '${body['error']}' : 'HTTP ${resp.statusCode}');
+      if (observe) onError?.call(path, err);
+      throw err;
     }
+    if (observe) onSuccess?.call();
     return body;
   }
 
-  Future<dynamic> _get(String path) => _send(() => _http.get(Uri.parse('$_base$path'), headers: _auth));
+  Future<dynamic> _get(String path) =>
+      _send(() => _http.get(Uri.parse('$_base$path'), headers: _auth), path: path);
 
-  Future<dynamic> _post(String path, Map<String, dynamic> body) => _send(() => _http.post(
-        Uri.parse('$_base$path'),
-        headers: {'Content-Type': 'application/json', ..._auth},
-        body: jsonEncode(body),
-      ));
+  Future<dynamic> _post(String path, Map<String, dynamic> body, {bool observe = true}) => _send(
+        () => _http.post(
+          Uri.parse('$_base$path'),
+          headers: {'Content-Type': 'application/json', ..._auth},
+          body: jsonEncode(body),
+        ),
+        path: path,
+        observe: observe,
+      );
+
+  /// A problem report. Not observed: its own failure is neither logged nor a reason to retry.
+  Future<void> postFeedback(Map<String, dynamic> report) => _post('/api/feedback', report, observe: false);
 
   Future<Catalog> catalog() async {
     final j = await _get('/api/catalog');
@@ -242,7 +264,7 @@ class ApiClient {
         ..fields['lang'] = lang
         ..files.add(http.MultipartFile.fromBytes('audio', audio, filename: filename));
       return http.Response.fromStream(await _http.send(req));
-    });
+    }, path: '/api/voice');
     return Draft.fromJson(j);
   }
 }
