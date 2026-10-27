@@ -159,10 +159,11 @@
   @media (max-width: 600px) { section { padding: var(--space-4); } }
   .fb { border: 1px solid var(--c-border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); margin-top: var(--space-3); }
   .fb .meta { color: var(--c-text-soft); }
-  .fb .badge { background: var(--c-info-bg); color: var(--c-accent-text); border-radius: var(--radius-md); padding: 0 var(--space-2); font-weight: 600; }
-  .fb pre { white-space: pre-wrap; word-break: break-word; margin: var(--space-2) 0 0; }
-  tr.pick { cursor: pointer; }
-  tr.pick.on { background: var(--c-info-bg); }
+  .fb .badge { background: var(--c-info-bg); color: var(--c-info-text); border: 1px solid var(--c-info); border-radius: var(--radius-full); padding: 0 var(--space-2); font-weight: 600; }
+  .fb .badge::before { content: "\2605\00A0"; }
+  .fb pre { white-space: pre-wrap; word-break: break-word; margin: var(--space-2) 0 0; font-family: var(--font-mono); }
+  .fb pre.msg { font-family: inherit; }
+  button.kindpick.on { background: var(--c-primary); color: var(--c-on-primary); }
   @media (max-width: 600px) { #nav { flex: 1 1 100%; order: 3; } }
 </style>
 </head>
@@ -918,14 +919,22 @@ function renderFeedback() {
   const kinds = feedbackKinds(feedbackRows);
   const body = $('feedbackKinds');
   body.replaceChildren();
-  const all = el('tr', undefined, 'pick' + (feedbackKind === '' ? ' on' : ''));
-  all.append(el('td', 'Все'), el('td', feedbackRows.length, 'num'), el('td', feedbackRows.length ? when(feedbackRows[0].created_at) : '—'));
-  all.onclick = () => { feedbackKind = ''; renderFeedback(); };
+  const pickButton = (kind, label) => {
+    const on = feedbackKind === kind;
+    const b = el('button', (on ? '✓ ' : '') + label, 'secondary small kindpick' + (on ? ' on' : ''));
+    b.type = 'button';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.onclick = () => { feedbackKind = kind; renderFeedback(); };
+    const td = el('td');
+    td.append(b);
+    return td;
+  };
+  const all = el('tr');
+  all.append(pickButton('', 'Все'), el('td', feedbackRows.length, 'num'), el('td', feedbackRows.length ? when(feedbackRows[0].created_at) : '—'));
   body.append(all);
   for (const k of kinds) {
-    const tr = el('tr', undefined, 'pick' + (feedbackKind === k.kind ? ' on' : ''));
-    tr.append(el('td', kindName(k.kind)), el('td', k.count, 'num'), el('td', when(k.last)));
-    tr.onclick = () => { feedbackKind = k.kind; renderFeedback(); };
+    const tr = el('tr');
+    tr.append(pickButton(k.kind, kindName(k.kind)), el('td', k.count, 'num'), el('td', when(k.last)));
     body.append(tr);
   }
   const shown = feedbackRows.filter(r => feedbackKind === '' || r.kind === feedbackKind);
@@ -938,7 +947,7 @@ function renderFeedback() {
     const head = el('div');
     head.append(el('b', '№' + r.id + ' · ' + kindName(r.kind) + ' · ' + when(r.created_at)));
     if (feedbackIsNew(r, feedbackSeenAtOpen)) head.append(' ', el('span', 'новое', 'badge'));
-    box.append(head, el('pre', r.text));
+    box.append(head, el('pre', r.text, 'msg'));
     if (r.voice_text) box.append(el('div', 'Голосовая заметка: ' + r.voice_text, 'meta'));
     const meta = ['версия ' + (r.app_version || '—'), 'Android ' + (r.android_version || '—'), 'устройство ' + (r.device || '—'),
       'оператор ' + (r.operator || '—'), 'экран ' + (r.screen || '—')];
@@ -957,6 +966,8 @@ function renderFeedback() {
 
 async function loadFeedback() {
   if (!access.signedIn) return;
+  sayFeedback('Загружаю отзывы…', 'ok');
+  $('feedbackReload').disabled = true;
   try {
     feedbackRows = await callJSON('/api/feedback');
     feedbackSeenAtOpen = Number(localStorage.getItem(FEEDBACK_SEEN)) || 0;
@@ -967,6 +978,7 @@ async function loadFeedback() {
   } catch (e) {
     sayFeedback(e.message, 'error');
   }
+  $('feedbackReload').disabled = false;
 }
 
 $('feedbackReload').onclick = loadFeedback;
