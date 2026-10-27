@@ -1,7 +1,7 @@
 name: qoimeks
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.1+2
+version: 0.1.2+3
 
 environment:
   sdk: ^3.11.5
@@ -27,3 +27,24 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    # Variable fonts (SIL OFL 1.1, licence texts next to the files). The same file is
+    # declared per weight so that FontWeight w400/w500/w600 select the wght axis.
+    - family: Onest
+      fonts:
+        - asset: assets/fonts/Onest-Variable.ttf
+          weight: 400
+        - asset: assets/fonts/Onest-Variable.ttf
+          weight: 500
+        - asset: assets/fonts/Onest-Variable.ttf
+          weight: 600
+        - asset: assets/fonts/Onest-Variable.ttf
+          weight: 700
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Variable.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-Variable.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-Variable.ttf
+          weight: 600
