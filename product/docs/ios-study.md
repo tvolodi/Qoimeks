@@ -59,18 +59,22 @@ until we (with infra) provide one (section 4).
 
 ### Costs
 
-- No Apple fee, no account (the web app is not distributed through Apple's program; for
-  Apple's fees see option B). **SOURCED** (developer.apple.com/programs)
-- Reuse of the existing Flutter code.
-- Work needed:
-  - manifest and icons in the design system;
-  - voice encoder choice (below);
-  - the in-app update check switched off on web (below);
-  - self-hosted CanvasKit and zxing files (optional);
-  - a hosting place for 37 MB of static files: the apex nginx download area
-    `/var/www/downloads/qoimeks/` or a new subpath, on infra's side;
-  - service worker caching to be designed: updating works by reloading.
-- Install is manual, by Share > Add to Home Screen; there is no store.
+- No Apple fee and no account: option A does not use the Apple Developer Program (for its
+  fee see section 3). **UNVERIFIED** (a cost estimate from the task brief, not tested)
+- Reuse of the existing Flutter code. **VERIFIED** (the repo has `mobile/web` and the web build
+  succeeds, fact a)
+- Work needed (work items from the task brief):
+  - manifest and icons in the design system; **VERIFIED** that they are still the Flutter defaults
+  - voice encoder choice (below); **VERIFIED** (code reading)
+  - the in-app update check switched off on web (below); **UNVERIFIED** how it behaves on web
+  - self-hosted CanvasKit and zxing files (optional); **UNVERIFIED** (flag and option names to be
+    confirmed)
+  - a hosting place for 37 MB of static files, **VERIFIED** (size of `build/web`): the apex nginx
+    download area `/var/www/downloads/qoimeks/` or a new subpath, on infra's side; **UNVERIFIED**
+    (not checked with infra)
+  - service worker caching to be designed; updating works by reloading. **UNVERIFIED**
+- Install is manual, by Share > Add to Home Screen; there is no store. **UNVERIFIED** (must be
+  tested on the iPhone)
 
 ### Code changes option A needs
 
@@ -107,9 +111,9 @@ until we (with infra) provide one (section 4).
   page). The price of a cloud macOS build service was not researched.
 - Apple review is not needed for TestFlight internal testers. **UNVERIFIED**
 - Signing and provisioning work is needed, and the owner's Apple identity is needed: an
-  owner-only step.
-- `mobile/ios` already exists in the repo. **VERIFIED**
-  limitations above. **UNVERIFIED** (not tested; no iOS build was made)
+  owner-only step. **UNVERIFIED**
+- `mobile/ios` already exists in the repo. **VERIFIED** No iOS build was made; whether it builds
+  is **UNVERIFIED**.
 
 ## 4. What the owner does on the iPhone to test option A
 
