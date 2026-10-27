@@ -199,6 +199,13 @@ Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoime
 `--min-version-code N` (default: the previous manifest value). The script test is
 `bash scripts/test-release.sh`; `go test ./...` runs it too.
 
+### Fonts
+
+The app bundles the variable fonts Onest and JetBrains Mono in `mobile/assets/fonts/`
+(SIL Open Font License 1.1; the licence texts `OFL-Onest.txt` and `OFL-JetBrainsMono.txt` are
+kept next to the files). Nothing is fetched at build or run time, and the golden test loads
+the same files, so its images look the same on any machine. The web pages keep system fonts.
+
 ## Download page for operators
 
 `deploy/qoimeks-site/` is the static download page (ru/kk) of the Android app, published with

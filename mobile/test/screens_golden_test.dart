@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:qoimeks/api.dart';
 import 'package:qoimeks/design/theme.dart';
+import 'package:qoimeks/design/tokens.dart';
 import 'package:qoimeks/history_screen.dart';
 import 'package:qoimeks/operation_screen.dart';
 import 'package:qoimeks/picker.dart';
@@ -25,26 +26,24 @@ const _dir = String.fromEnvironment(
   defaultValue: '../../docs/design-screens/after',
 );
 
-/// Test fonts: the Flutter SDK's Roboto stands in for the interface font and, when the
-/// machine has one, Consolas for the monospace family, so the images are readable.
+/// Test fonts: the bundled Onest and JetBrains Mono (and the SDK's Material icons), so the
+/// images do not depend on the fonts installed on the machine.
 Future<void> _loadFonts() async {
   Future<void> load(String family, String path) async {
-    final f = File(path);
-    if (!f.existsSync()) return;
     final loader = FontLoader(family)
-      ..addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer)));
+      ..addFont(Future.value(ByteData.view(File(path).readAsBytesSync().buffer)));
     await loader.load();
   }
 
   final root = Platform.environment['FLUTTER_ROOT'];
   if (root != null) {
-    final fonts = '$root/bin/cache/artifacts/material_fonts';
-    await load('MaterialIcons', '$fonts/materialicons-regular.otf');
-    for (final family in ['Roboto', 'Onest']) {
-      await load(family, '$fonts/roboto-regular.ttf');
-    }
+    await load(
+      'MaterialIcons',
+      '$root/bin/cache/artifacts/material_fonts/materialicons-regular.otf',
+    );
   }
-  await load('JetBrains Mono', 'C:/Windows/Fonts/consola.ttf');
+  await load(AppFonts.sans, 'assets/fonts/Onest-Variable.ttf');
+  await load(AppFonts.mono, 'assets/fonts/JetBrainsMono-Variable.ttf');
 }
 
 http.Response _json(Object body) => http.Response.bytes(
