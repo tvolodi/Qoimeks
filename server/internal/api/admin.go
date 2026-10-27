@@ -28,11 +28,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	if s.ProvisioningToken == "" {
 		return
 	}
-	now := s.now
-	if now == nil {
-		now = time.Now
-	}
-	limiter := &rateLimiter{n: adminRateLimit, window: time.Minute, now: now}
+	limiter := &rateLimiter{n: adminRateLimit, window: time.Minute, now: s.clock}
 	guard := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			want := []byte("Bearer " + s.ProvisioningToken)
@@ -51,8 +47,17 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/v1/tenants", guard(s.createTenant))
 	mux.HandleFunc("POST /admin/v1/tenants/{id}/suspend", guard(s.setTenantStatus(store.TenantSuspended)))
 	mux.HandleFunc("POST /admin/v1/tenants/{id}/resume", guard(s.setTenantStatus(store.TenantActive)))
+	mux.HandleFunc("POST /admin/v1/tenants/{id}/expire", guard(s.setTenantStatus(store.TenantExpired)))
 	mux.HandleFunc("POST /admin/v1/tenants/{id}/rotate-code", guard(s.rotateTenantCode))
 	mux.HandleFunc("GET /admin/v1/tenants/{id}", guard(s.getTenant))
+}
+
+// clock is the server's time; tests replace s.now.
+func (s *Server) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 func writeAdminError(w http.ResponseWriter, status int, code, msg string) {
@@ -64,6 +69,8 @@ func adminStoreError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeAdminError(w, http.StatusNotFound, "not_found", "unknown tenant")
+	case errors.Is(err, store.ErrTenantExpired):
+		writeAdminError(w, http.StatusConflict, "conflict", "tenant expired")
 	case errors.Is(err, store.ErrInvalid):
 		writeAdminError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	default:
@@ -82,13 +89,24 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 		Tier       string `json:"tier"`
 		Plan       string `json:"plan"`
 		OwnerEmail string `json:"owner_email"`
+		ExpiresAt  string `json:"expires_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeAdminError(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 		return
 	}
+	var expires *time.Time
+	if in.ExpiresAt != "" {
+		at, err := time.Parse(time.RFC3339, in.ExpiresAt)
+		if err != nil {
+			writeAdminError(w, http.StatusBadRequest, "invalid_request", "expires_at must be an RFC 3339 time")
+			return
+		}
+		expires = &at
+	}
 	t, code, created, err := s.Store.CreateTenant(r.Context(), store.TenantInput{
 		ID: in.TenantID, Name: in.Name, Language: in.Language, Tier: in.Tier, Plan: in.Plan, OwnerEmail: in.OwnerEmail,
+		ExpiresAt: expires, Now: s.clock(),
 	})
 	if err != nil {
 		adminStoreError(w, r, err)
@@ -104,7 +122,7 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 	}
 	body := map[string]string{
 		"tenant_id":  t.ID.String(),
-		"status":     t.Status,
+		"status":     t.EffectiveStatus(s.clock()),
 		"server_url": serverURL,
 	}
 	if created {
@@ -134,7 +152,7 @@ func (s *Server) setTenantStatus(status string) http.HandlerFunc {
 			writeAdminError(w, http.StatusNotFound, "not_found", "unknown tenant")
 			return
 		}
-		if err := s.Store.SetTenantStatus(r.Context(), id, status); err != nil {
+		if err := s.Store.SetTenantStatus(r.Context(), id, status, s.clock()); err != nil {
 			adminStoreError(w, r, err)
 			return
 		}
@@ -158,9 +176,14 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
 	if plan != "" {
 		planOut = plan
 	}
+	var expiresOut any // null: never expires
+	if t.ExpiresAt != nil {
+		expiresOut = t.ExpiresAt.UTC().Format(time.RFC3339)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tenant_id":   t.ID.String(),
-		"status":      t.Status,
+		"status":      t.EffectiveStatus(s.clock()),
+		"expires_at":  expiresOut,
 		"tier":        tier,
 		"plan":        planOut,
 		"stored_tier": t.Tier,

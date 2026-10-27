@@ -151,7 +151,7 @@ One server can host several tenants. Each tenant is a PostgreSQL schema (`t_<ten
 own copy of the ledger tables and the same append-only triggers; the default schema is the
 original single-tenant install and keeps working with `ACCESS_TOKEN`. A tenant has its own
 access code: the app and the web interface send it like `ACCESS_TOKEN`, and the server serves
-the request from that tenant's schema. A suspended tenant gets 403 `tenant suspended`; its data is kept.
+the request from that tenant's schema. A suspended tenant gets 403 `tenant suspended`; its data is kept. A demo tenant with `expires_at` in the past, or one expired through `POST /admin/v1/tenants/{id}/expire`, gets 403 `tenant expired` (data kept).
 
 The site creates, suspends and resumes tenants through `/admin/v1` (bearer `PROVISIONING_TOKEN`,
 30 requests a minute); the contract is in `docs/public-page-and-signup-draft.md`, section 3.

@@ -32,6 +32,8 @@ var (
 	ErrNotFound = errors.New("not found")
 	// ErrInvalid wraps problems with the request itself (unknown SKU, bad kind, ...).
 	ErrInvalid = errors.New("invalid")
+	// ErrTenantExpired: the tenant is expired, so it cannot be suspended or resumed.
+	ErrTenantExpired = errors.New("tenant expired")
 	// ErrConflict: the ID was already used for a different operation.
 	ErrConflict = errors.New("this operation was already posted with different data")
 )

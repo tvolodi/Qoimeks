@@ -20,6 +20,7 @@ import (
 const (
 	TenantActive    = "active"
 	TenantSuspended = "suspended"
+	TenantExpired   = "expired"
 )
 
 // Tenant is one row of the registry. Its ledger lives in the schema SchemaName.
@@ -32,6 +33,16 @@ type Tenant struct {
 	SchemaName string
 	Status     string
 	CreatedAt  time.Time
+	ExpiresAt  *time.Time // nil: never expires
+}
+
+// EffectiveStatus is the status as of now: a demo tenant past its expires_at is
+// "expired" even though the row still says otherwise. The row is not rewritten.
+func (t Tenant) EffectiveStatus(now time.Time) string {
+	if t.ExpiresAt != nil && !t.ExpiresAt.After(now) {
+		return TenantExpired
+	}
+	return t.Status
 }
 
 // TenantInput is what the provisioning API passes to CreateTenant.
@@ -42,6 +53,8 @@ type TenantInput struct {
 	Tier       string // demo, production, or a stored tier value (legacy)
 	Plan       string // own_keys or all_inclusive; used only with Tier "production"
 	OwnerEmail string
+	ExpiresAt  *time.Time // demo only; must be after Now
+	Now        time.Time  // the clock for ExpiresAt; zero means time.Now()
 }
 
 var (
@@ -93,6 +106,18 @@ func (in TenantInput) validate() (uuid.UUID, error) {
 	}
 	if _, err := StoredTier(in.Tier, in.Plan); err != nil {
 		return uuid.Nil, err
+	}
+	if in.ExpiresAt != nil {
+		now := in.Now
+		if now.IsZero() {
+			now = time.Now()
+		}
+		switch {
+		case in.Tier != "demo":
+			return uuid.Nil, invalid("expires_at is allowed only with tier demo")
+		case !in.ExpiresAt.After(now):
+			return uuid.Nil, invalid("expires_at must be in the future")
+		}
 	}
 	return id, nil
 }
@@ -167,11 +192,11 @@ func (s *Store) MigrateTenants(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-const tenantColumns = `tenant_id, name, language, tier, owner_email, schema_name, status, created_at`
+const tenantColumns = `tenant_id, name, language, tier, owner_email, schema_name, status, created_at, expires_at`
 
 func scanTenant(row pgx.Row) (Tenant, error) {
 	var t Tenant
-	err := row.Scan(&t.ID, &t.Name, &t.Language, &t.Tier, &t.OwnerEmail, &t.SchemaName, &t.Status, &t.CreatedAt)
+	err := row.Scan(&t.ID, &t.Name, &t.Language, &t.Tier, &t.OwnerEmail, &t.SchemaName, &t.Status, &t.CreatedAt, &t.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Tenant{}, ErrNotFound
 	}
@@ -223,10 +248,10 @@ func (s *Store) CreateTenant(ctx context.Context, in TenantInput) (Tenant, strin
 	}
 	schema := schemaFor(id)
 	tag, err := conn.Exec(ctx, `
-		insert into tenants (tenant_id, name, language, tier, owner_email, schema_name, access_hash)
-		values ($1, $2, $3, $4, $5, $6, $7)
+		insert into tenants (tenant_id, name, language, tier, owner_email, schema_name, access_hash, expires_at)
+		values ($1, $2, $3, $4, $5, $6, $7, $8)
 		on conflict (tenant_id) do nothing`,
-		id, strings.TrimSpace(in.Name), in.Language, tier, in.OwnerEmail, schema, hashCode(code))
+		id, strings.TrimSpace(in.Name), in.Language, tier, in.OwnerEmail, schema, hashCode(code), in.ExpiresAt)
 	if err != nil {
 		return Tenant{}, "", false, err
 	}
@@ -261,18 +286,26 @@ func (s *Store) TenantByCode(ctx context.Context, code string) (Tenant, error) {
 	return scanTenant(s.pool.QueryRow(ctx, `select `+tenantColumns+` from tenants where access_hash = $1`, hashCode(code)))
 }
 
-// SetTenantStatus suspends or resumes a tenant; setting the current status again is fine.
-// Data in the tenant schema is not touched.
-func (s *Store) SetTenantStatus(ctx context.Context, id uuid.UUID, status string) error {
-	if status != TenantActive && status != TenantSuspended {
+// SetTenantStatus suspends, resumes or expires a tenant; setting the current status again
+// is fine. An expired tenant (stored, or a demo past expires_at as of now) cannot be
+// suspended or resumed: ErrTenantExpired. Data in the tenant schema is not touched.
+func (s *Store) SetTenantStatus(ctx context.Context, id uuid.UUID, status string, now time.Time) error {
+	if status != TenantActive && status != TenantSuspended && status != TenantExpired {
 		return invalid("unknown status %q", status)
 	}
-	tag, err := s.pool.Exec(ctx, `update tenants set status = $2, updated_at = now() where tenant_id = $1`, id, status)
+	tag, err := s.pool.Exec(ctx, `
+		update tenants set status = $2, updated_at = now()
+		where tenant_id = $1
+		  and ($2 = 'expired' or (status <> 'expired' and (expires_at is null or expires_at > $3)))`,
+		id, status, now)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		if _, err := s.Tenant(ctx, id); err != nil {
+			return err
+		}
+		return ErrTenantExpired
 	}
 	return nil
 }

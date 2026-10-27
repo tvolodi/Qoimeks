@@ -245,6 +245,7 @@ func TestAdminRequiresProvisioningToken(t *testing.T) {
 		{"POST", "/admin/v1/tenants"},
 		{"POST", "/admin/v1/tenants/" + id + "/suspend"},
 		{"POST", "/admin/v1/tenants/" + id + "/resume"},
+		{"POST", "/admin/v1/tenants/" + id + "/expire"},
 		{"GET", "/admin/v1/tenants/" + id},
 	}
 	for _, r := range routes {

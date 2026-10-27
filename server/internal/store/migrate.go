@@ -16,6 +16,7 @@ import (
 var publicOnly = map[string]bool{
 	"005_tenants.sql":                  true,
 	"006_tenants_drop_access_code.sql": true,
+	"007_tenants_expiry.sql":           true,
 }
 
 // Migrate applies the embedded migrations that have not run yet to the default schema.

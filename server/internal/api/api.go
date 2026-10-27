@@ -113,7 +113,12 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 			t, err := s.Store.TenantByCode(r.Context(), code)
 			switch {
 			case err == nil:
-				if t.Status != store.TenantActive {
+				switch t.EffectiveStatus(s.clock()) {
+				case store.TenantExpired:
+					writeError(w, http.StatusForbidden, "tenant expired")
+					return
+				case store.TenantActive:
+				default:
 					writeError(w, http.StatusForbidden, "tenant suspended")
 					return
 				}
