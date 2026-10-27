@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -131,5 +133,68 @@ func TestFeedbackLimits(t *testing.T) {
 	}
 	if !voice {
 		t.Fatalf("voice_text not stored: %+v", rows)
+	}
+}
+
+func TestFeedbackListAndExport(t *testing.T) {
+	srv, url, _ := adminSetup(t, "shared")
+	for _, p := range []string{"/api/feedback", "/api/feedback/export.md"} {
+		call(t, "GET", url+p, "", nil, 401, nil)
+		call(t, "GET", url+p, "wrong", nil, 401, nil)
+	}
+	var empty []store.Feedback
+	call(t, "GET", url+"/api/feedback", "shared", nil, 200, &empty)
+	if empty == nil || len(empty) != 0 {
+		t.Fatalf("empty list: %#v", empty)
+	}
+
+	call(t, "POST", url+"/api/feedback", "shared", map[string]any{
+		"text": "первый отзыв", "operator": "Аня", "screen": "history", "app_version": "0.2.0",
+		"android_version": "13", "device": "Pixel 7", "errors": []any{"timeout one", map[string]any{"msg": "boom two"}},
+	}, 201, nil)
+	if _, err := srv.Store.AppendFeedback(t.Context(), store.Feedback{Kind: "llm_error", Text: "второй сбой", Operator: "Боря"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var rows []store.Feedback
+	call(t, "GET", url+"/api/feedback", "shared", nil, 200, &rows)
+	if len(rows) != 2 || rows[0].Text != "второй сбой" || rows[1].Text != "первый отзыв" || rows[0].ID <= rows[1].ID {
+		t.Fatalf("not newest first: %+v", rows)
+	}
+	call(t, "GET", url+"/api/feedback?limit=1", "shared", nil, 200, &rows)
+	if len(rows) != 1 || rows[0].Text != "второй сбой" {
+		t.Fatalf("limit: %+v", rows)
+	}
+
+	req, _ := http.NewRequest("GET", url+"/api/feedback/export.md", nil)
+	req.Header.Set("Authorization", "Bearer shared")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	md := string(raw)
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/markdown") ||
+		!strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment") {
+		t.Fatalf("export: %d %v", resp.StatusCode, resp.Header)
+	}
+	for _, want := range []string{"первый отзыв", "второй сбой", "user", "llm_error", "0.2.0", "13", "Pixel 7",
+		"Аня", "Боря", "history", "2026-", "timeout one", "boom two"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown lacks %q:\n%s", want, md)
+		}
+	}
+	if strings.Index(md, "второй сбой") > strings.Index(md, "первый отзыв") {
+		t.Errorf("markdown not newest first:\n%s", md)
+	}
+}
+
+func TestWebPageHasFeedbackSection(t *testing.T) {
+	for _, want := range []string{`href="#feedback"`, `id="page-feedback"`, "Отзывы", "/api/feedback", "/api/feedback/export.md",
+		"localStorage.getItem(FEEDBACK_SEEN)", "localStorage.setItem(FEEDBACK_SEEN", "новое", "feedbackKinds"} {
+		if !strings.Contains(string(webPage), want) {
+			t.Errorf("web.html lacks %q", want)
+		}
 	}
 }

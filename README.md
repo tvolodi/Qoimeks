@@ -75,6 +75,14 @@ the database. Before storing, every string in the request has the server `ACCESS
 code the request was sent with (a tenant's code), every configured provider key of 8+ characters,
 `Bearer <token>` and `sk-…` keys replaced with `[redacted]`.
 
+`GET /api/feedback` (bearer access code) lists the stored items newest first as JSON, up to
+`?limit=` rows (default 200, at most 1000); `GET /api/feedback/export.md` returns the newest
+1000 as a Markdown file with text, kind, version, Android, device, operator, screen, time and
+errors of every item, for handing to the team. The web interface has a section «Отзывы»
+(`/#feedback`, after signing in): items newest first with all details, a table of kinds with the
+count and last time of each (click a row to filter), a «новое» mark on items newer than the
+newest id seen on the previous visit (kept in the browser's localStorage), and a Markdown download.
+
 ## Stock overview and Excel in the browser
 
 The server's root page (`http://<server>:8080/`) is the web interface. The button at the top

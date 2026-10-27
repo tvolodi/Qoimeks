@@ -40,6 +40,21 @@ func (s *Store) AppendFeedback(ctx context.Context, f Feedback) (int64, error) {
 	return id, err
 }
 
+// RecentFeedback returns up to limit rows, newest first.
+func (s *Store) RecentFeedback(ctx context.Context, limit int) ([]Feedback, error) {
+	rows, err := s.pool.Query(ctx, `
+		select id, created_at, kind, text, voice_text, app_version, android_version, device, operator, screen, errors, provider
+		from feedback order by id desc limit $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Feedback, error) {
+		var f Feedback
+		return f, r.Scan(&f.ID, &f.CreatedAt, &f.Kind, &f.Text, &f.VoiceText, &f.AppVersion, &f.AndroidVersion,
+			&f.Device, &f.Operator, &f.Screen, &f.Errors, &f.Provider)
+	})
+}
+
 // ListFeedback returns up to limit rows with id greater than after, oldest first.
 func (s *Store) ListFeedback(ctx context.Context, after int64, limit int) ([]Feedback, error) {
 	rows, err := s.pool.Query(ctx, `

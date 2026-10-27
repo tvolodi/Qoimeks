@@ -2,9 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -153,4 +155,72 @@ func (s *Server) postFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
+}
+
+const (
+	defaultFeedbackLimit = 200
+	maxFeedbackLimit     = 1000
+)
+
+// feedbackLimit reads the optional ?limit=; anything unusable gives the default.
+func feedbackLimit(r *http.Request) int {
+	n, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || n < 1 {
+		return defaultFeedbackLimit
+	}
+	return min(n, maxFeedbackLimit)
+}
+
+func (s *Server) listFeedback(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.store(r).RecentFeedback(r.Context(), feedbackLimit(r))
+	if err != nil {
+		storeError(w, r, err)
+		return
+	}
+	if rows == nil {
+		rows = []store.Feedback{}
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+// feedbackMarkdown renders items, in the order given, for handing to the team.
+func feedbackMarkdown(rows []store.Feedback) string {
+	var b strings.Builder
+	b.WriteString("# Отзывы\n\nЗаписей: " + strconv.Itoa(len(rows)) + "\n")
+	for _, f := range rows {
+		fmt.Fprintf(&b, "\n## #%d · %s · %s\n\n", f.ID, f.Kind, f.CreatedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
+		fmt.Fprintf(&b, "- Тип: %s\n- Версия: %s\n- Android: %s\n- Устройство: %s\n- Оператор: %s\n- Экран: %s\n",
+			f.Kind, f.AppVersion, f.AndroidVersion, f.Device, f.Operator, f.Screen)
+		if f.Provider != nil {
+			fmt.Fprintf(&b, "- Провайдер: %s\n", *f.Provider)
+		}
+		b.WriteString("\n" + f.Text + "\n")
+		if f.VoiceText != nil {
+			b.WriteString("\nГолосовая заметка:\n\n> " + strings.ReplaceAll(*f.VoiceText, "\n", "\n> ") + "\n")
+		}
+		var errs []json.RawMessage
+		if json.Unmarshal(f.Errors, &errs) == nil && len(errs) > 0 {
+			b.WriteString("\nОшибки:\n\n")
+			for _, e := range errs {
+				var s string
+				if json.Unmarshal(e, &s) != nil {
+					s = string(e)
+				}
+				b.WriteString("- `" + strings.ReplaceAll(strings.ReplaceAll(s, "`", "'"), "\n", " ") + "`\n")
+			}
+		}
+	}
+	return b.String()
+}
+
+func (s *Server) feedbackExport(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.store(r).RecentFeedback(r.Context(), maxFeedbackLimit)
+	if err != nil {
+		storeError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="feedback-`+s.clock().UTC().Format("2006-01-02")+`.md"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write([]byte(feedbackMarkdown(rows)))
 }
