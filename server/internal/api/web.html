@@ -157,6 +157,13 @@
   #setup .warn::before { content: "\26A0\FE0E\00A0"; }
   .page h1 { font-size: var(--text-xl); margin: 0 0 var(--space-3); }
   @media (max-width: 600px) { section { padding: var(--space-4); } }
+  .fb { border: 1px solid var(--c-border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); margin-top: var(--space-3); }
+  .fb .meta { color: var(--c-text-soft); }
+  .fb .badge { background: var(--c-info-bg); color: var(--c-info-text); border: 1px solid var(--c-info); border-radius: var(--radius-full); padding: 0 var(--space-2); font-weight: 600; }
+  .fb .badge::before { content: "\2605\00A0"; }
+  .fb pre { white-space: pre-wrap; word-break: break-word; margin: var(--space-2) 0 0; font-family: var(--font-mono); }
+  .fb pre.msg { font-family: inherit; }
+  button.kindpick.on { background: var(--c-primary); color: var(--c-on-primary); }
   @media (max-width: 600px) { #nav { flex: 1 1 100%; order: 3; } }
 </style>
 </head>
@@ -168,6 +175,7 @@
       <a href="#balances">Остатки</a>
       <a href="#excel">Импорт и экспорт</a>
       <a href="#history">История загрузок</a>
+      <a href="#feedback">Отзывы</a>
     </nav>
     <div class="access">
       <button id="accessButton" class="secondary" type="button" aria-haspopup="true" aria-expanded="false">Войти</button>
@@ -301,6 +309,29 @@
         </table>
       </div>
     </section>
+  </div>
+
+  <div class="page" id="page-feedback" hidden>
+    <section>
+      <h1>Отзывы</h1>
+      <p class="hint">Сообщения из приложения и ошибки, которые сервер записал сам. Сначала новые. Метка «новое» стоит у записей, появившихся после вашего прошлого визита в этот раздел.</p>
+      <div class="actions">
+        <button id="feedbackReload" class="secondary" type="button">Обновить</button>
+        <button id="feedbackExport" type="button">Выгрузить в Markdown</button>
+      </div>
+      <div id="feedbackMessage" class="note"></div>
+    </section>
+    <section>
+      <h2>По видам</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Вид</th><th class="num">Записей</th><th>Последняя</th></tr></thead>
+          <tbody id="feedbackKinds"></tbody>
+        </table>
+      </div>
+      <p class="count" id="feedbackCount"></p>
+    </section>
+    <section id="feedbackList"></section>
   </div>
 </main>
 
@@ -657,7 +688,7 @@ async function load() {
 }
 
 // Pages are parts of this one document, chosen by the address after "#".
-const pages = ['balances', 'excel', 'history'];
+const pages = ['balances', 'excel', 'history', 'feedback'];
 
 function showPage() {
   const name = pages.includes(location.hash.slice(1)) ? location.hash.slice(1) : pages[0];
@@ -665,6 +696,7 @@ function showPage() {
   for (const a of $('nav').children) a.className = a.hash === '#' + name ? 'on' : '';
   $('signedOut').hidden = access.signedIn;
   if (access.signedIn && name === 'history') loadHistory();
+  if (access.signedIn && name === 'feedback') loadFeedback();
 }
 
 function showAccess(open) {
@@ -849,6 +881,126 @@ function show(r) {
   }
   select.value = r.sheet;
 }
+
+// --- feedback begin (pure functions, no DOM)
+// The newest feedback id seen is kept in this browser; rows above it are new.
+const FEEDBACK_SEEN = 'feedbackSeen';
+
+function feedbackNewestID(rows) {
+  return rows.reduce((m, r) => Math.max(m, r.id), 0);
+}
+
+function feedbackIsNew(row, seen) {
+  return row.id > seen;
+}
+
+// Count and latest time per kind, computed from the rows; most recently active first.
+function feedbackKinds(rows) {
+  const by = new Map();
+  for (const r of rows) {
+    const k = by.get(r.kind) || { kind: r.kind, count: 0, last: r.created_at };
+    k.count++;
+    if (new Date(r.created_at) > new Date(k.last)) k.last = r.created_at;
+    by.set(r.kind, k);
+  }
+  return [...by.values()].sort((a, b) => new Date(b.last) - new Date(a.last));
+}
+// --- feedback end
+
+const kindNames = { user: 'от пользователя', speech_error: 'ошибка распознавания речи', llm_error: 'ошибка языковой модели', post_error: 'ошибка проведения операции' };
+const kindName = k => kindNames[k] || k;
+const when = t => new Date(t).toLocaleString('ru-RU');
+const sayFeedback = (text, kind) => say(text, kind, 'feedbackMessage');
+let feedbackRows = [];
+let feedbackSeenAtOpen = 0;
+let feedbackKind = '';
+
+function renderFeedback() {
+  const kinds = feedbackKinds(feedbackRows);
+  const body = $('feedbackKinds');
+  body.replaceChildren();
+  const pickButton = (kind, label) => {
+    const on = feedbackKind === kind;
+    const b = el('button', (on ? '✓ ' : '') + label, 'secondary small kindpick' + (on ? ' on' : ''));
+    b.type = 'button';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.onclick = () => { feedbackKind = kind; renderFeedback(); };
+    const td = el('td');
+    td.append(b);
+    return td;
+  };
+  const all = el('tr');
+  all.append(pickButton('', 'Все'), el('td', feedbackRows.length, 'num'), el('td', feedbackRows.length ? when(feedbackRows[0].created_at) : '—'));
+  body.append(all);
+  for (const k of kinds) {
+    const tr = el('tr');
+    tr.append(pickButton(k.kind, kindName(k.kind)), el('td', k.count, 'num'), el('td', when(k.last)));
+    body.append(tr);
+  }
+  const shown = feedbackRows.filter(r => feedbackKind === '' || r.kind === feedbackKind);
+  $('feedbackCount').textContent = 'Показано: ' + shown.length + ' из ' + feedbackRows.length;
+  const list = $('feedbackList');
+  list.replaceChildren();
+  if (shown.length === 0) list.append(el('p', 'Отзывов пока нет', 'hint'));
+  for (const r of shown) {
+    const box = el('div', undefined, 'fb');
+    const head = el('div');
+    head.append(el('b', '№' + r.id + ' · ' + kindName(r.kind) + ' · ' + when(r.created_at)));
+    if (feedbackIsNew(r, feedbackSeenAtOpen)) head.append(' ', el('span', 'новое', 'badge'));
+    box.append(head, el('pre', r.text, 'msg'));
+    if (r.voice_text) box.append(el('div', 'Голосовая заметка: ' + r.voice_text, 'meta'));
+    const meta = ['версия ' + (r.app_version || '—'), 'Android ' + (r.android_version || '—'), 'устройство ' + (r.device || '—'),
+      'оператор ' + (r.operator || '—'), 'экран ' + (r.screen || '—')];
+    if (r.provider) meta.push('провайдер ' + r.provider);
+    box.append(el('div', meta.join(' · '), 'meta'));
+    const errs = Array.isArray(r.errors) ? r.errors : [];
+    if (errs.length) {
+      const d = el('details');
+      d.append(el('summary', 'Ошибки: ' + errs.length));
+      d.append(el('pre', errs.map(e => typeof e === 'string' ? e : JSON.stringify(e)).join('\n')));
+      box.append(d);
+    }
+    list.append(box);
+  }
+}
+
+async function loadFeedback() {
+  if (!access.signedIn) return;
+  sayFeedback('Загружаю отзывы…', 'ok');
+  $('feedbackReload').disabled = true;
+  try {
+    feedbackRows = await callJSON('/api/feedback');
+    feedbackSeenAtOpen = Number(localStorage.getItem(FEEDBACK_SEEN)) || 0;
+    sayFeedback('');
+    renderFeedback();
+    const newest = feedbackNewestID(feedbackRows);
+    if (newest > feedbackSeenAtOpen) localStorage.setItem(FEEDBACK_SEEN, String(newest));
+  } catch (e) {
+    sayFeedback(e.message, 'error');
+  }
+  $('feedbackReload').disabled = false;
+}
+
+$('feedbackReload').onclick = loadFeedback;
+$('feedbackExport').onclick = async () => {
+  $('feedbackExport').disabled = true;
+  try {
+    const resp = await call('/api/feedback/export.md');
+    const name = (/filename="([^"]+)"/.exec(resp.headers.get('Content-Disposition') || '') || [])[1] || 'feedback.md';
+    const url = URL.createObjectURL(await resp.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    sayFeedback('Файл «' + name + '» сохранён.', 'ok');
+  } catch (e) {
+    sayFeedback(e.message, 'error');
+  }
+  $('feedbackExport').disabled = false;
+};
 
 const sayHistory = (text, kind) => say(text, kind, 'historyMessage');
 
