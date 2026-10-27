@@ -153,12 +153,15 @@ Small (include in the build):
   first, and each sheet has fixed columns A–G after the header row that starts with "Артикул". The importer looks
   in that header row for the cell with the text "Штрихкод"; if present, that column holds the SKU's code, if
   absent nothing changes (old workbooks import as before). Only one code per cell.
-  - Parsing: `ImportSKU` (passed to `store.Import` as `[]store.ImportSKU`) gets a field `Code string`; empty
+  - Parsing: `ImportSKU` (passed to `store.Import` as `[]store.ImportSKU`) gets a new field `Barcode string` (not `Code`: that name already holds the article); empty
     cell = no code. The code type is detected by shape (see below).
   - `check` (`Result.Warnings`, plain strings, changes nothing) warns about: a code longer than the length
     limit of section 2; a code owned by another SKU or location ("Строка 12: код 4600… уже занят товаром «X»");
     the same code on two different SKUs in the file. A 13/8-digit code with a wrong check digit is not an error;
-    it is stored as `manual`. Warnings do not block `load`.
+    it is stored as `manual`. Warnings do not block `load`. Shape, length and in-file problems come from the
+    parser; the "owned by another object" warning needs the database, so it comes from `store.Import` (which
+    already runs in `check` as `DryRun`), returned in `ImportReport` (for example `CodeWarnings []string`) and
+    appended to `remarks` in `api/import.go`.
   - `load`: in the same transaction as the stock rows, `store.Import` assigns each code with `created_by` =
     operator of the import. A code that is a duplicate (owned by another object) is **skipped with a warning;
     the row's stock is still loaded** — the workbook is the authority on balances, a bad code must not stop it.
