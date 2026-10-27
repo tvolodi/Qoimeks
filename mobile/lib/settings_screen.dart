@@ -31,9 +31,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _form = GlobalKey<FormState>();
   late final _server = TextEditingController(
-    text: widget.settings.serverUrl.isEmpty
-        ? 'http://'
-        : widget.settings.serverUrl,
+    text: initialServerText(widget.settings.serverUrl),
   );
   late final _accessCode = TextEditingController(
     text: widget.settings.accessCode,
