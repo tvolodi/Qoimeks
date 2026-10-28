@@ -87,6 +87,10 @@ type Server struct {
 	Providers ProviderResolver
 	// Settings saves and shows the stored provider settings (web admin). Nil turns that API off.
 	Settings SettingsService
+	// SettingsUI turns the settings page and its /api/settings routes on (SETTINGS_UI=1).
+	// Off, the page is cut from the served HTML and the routes do not exist (404). Stored
+	// settings are still read by Providers; this only hides editing.
+	SettingsUI bool
 	// Maintenance, when true, answers every state-changing request (POST, PUT, PATCH,
 	// DELETE) with 503 and Retry-After; reads, /healthz and CORS preflight keep working.
 	Maintenance bool
@@ -154,7 +158,9 @@ func (s *Server) Handler() http.Handler {
 	s.webRoutes(mux)
 	s.importRoutes(mux)
 	s.adminRoutes(mux)
-	s.settingsRoutes(mux)
+	if s.SettingsUI {
+		s.settingsRoutes(mux)
+	}
 	return cors(s.freezeWrites(s.requireToken(mux)))
 }
 

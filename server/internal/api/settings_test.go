@@ -64,7 +64,7 @@ func settingsServer(t *testing.T, accessToken string, f *fakeProviders) (*Server
 	}
 	srv := &Server{
 		Store: st, AccessToken: accessToken, ProvisioningToken: provToken,
-		Providers: f, Settings: &providers.Service{Store: st, Key: k},
+		Providers: f, Settings: &providers.Service{Store: st, Key: k}, SettingsUI: true,
 	}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(func() { ts.Close(); srv.Close() })
@@ -179,6 +179,56 @@ func TestSettingsTestButton(t *testing.T) {
 		t.Fatalf("key in log: %s", logs.String())
 	}
 	call(t, "POST", url+"/api/settings/providers/test", sharedToken, map[string]string{"kind": "x"}, 400, nil)
+}
+
+func TestSettingsUIOffByDefault(t *testing.T) {
+	st := storetest.New(t)
+	srv := &Server{
+		Store: st, AccessToken: sharedToken,
+		Providers: &fakeProviders{}, Settings: &providers.Service{Store: st},
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(func() { ts.Close(); srv.Close() })
+
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	page, _ := io.ReadAll(resp.Body)
+	for _, bad := range []string{`page-settings`, `href="#settings"`, "/api/settings", "settings:begin", "settings:end", "loadSettings", "'settings'", "<h1>Настройки</h1>"} {
+		if bytes.Contains(page, []byte(bad)) {
+			t.Errorf("served page contains %q", bad)
+		}
+	}
+	for _, want := range []string{`id="page-feedback"`, `href="#feedback"`, "const pages = ['balances', 'excel', 'history', 'feedback'];"} {
+		if !bytes.Contains(page, []byte(want)) {
+			t.Errorf("served page lost %q", want)
+		}
+	}
+
+	put := map[string]any{"kind": "llm", "provider": "openai", "model": "m", "api_key": apiKey}
+	call(t, "GET", ts.URL+"/api/settings/providers", sharedToken, nil, 404, nil)
+	call(t, "PUT", ts.URL+"/api/settings/providers", sharedToken, put, 404, nil)
+	call(t, "POST", ts.URL+"/api/settings/providers/test", sharedToken, map[string]string{"kind": "llm"}, 404, nil)
+	if rows, _ := st.ListProviderSettings(t.Context()); len(rows) != 0 {
+		t.Fatalf("stored %d rows", len(rows))
+	}
+}
+
+func TestSettingsUIOnServesPage(t *testing.T) {
+	_, url := settingsServer(t, sharedToken, &fakeProviders{})
+	resp, err := http.Get(url + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	page, _ := io.ReadAll(resp.Body)
+	for _, want := range []string{`id="page-settings"`, `href="#settings"`, "loadSettings", "'settings'"} {
+		if !bytes.Contains(page, []byte(want)) {
+			t.Errorf("served page lacks %q", want)
+		}
+	}
 }
 
 func TestSettingsPageHasSection(t *testing.T) {

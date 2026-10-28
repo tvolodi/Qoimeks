@@ -40,6 +40,7 @@ On first launch the app asks for the operator's name and the server address
 | `STT_MODEL` | `scribe_v2` / `gpt-4o-transcribe` | speech model |
 | `SETTINGS_KEY` | — | base64 of 32 random bytes (`openssl rand -base64 32`); encrypts the provider API keys stored on the server. Without it stored keys are not used and cannot be saved |
 | `MAINTENANCE_MODE` | — | `1`/`on` (read at start) freezes writes: every POST/PUT/PATCH/DELETE (operations, reverse, import, feedback, settings, tenant API) answers 503 with `Retry-After`; reads, `/healthz` and CORS preflight keep working. Used for the short write freeze before copying a schema |
+| `SETTINGS_UI` | off | `1` shows the «Настройки» section in the web interface and enables the `/api/settings/providers*` routes. Anything else (default): the section is cut from the served page and the routes answer 404 |
 
 Settings can also be put in a `.env` file in the repository root or in `server/`.
 
@@ -74,6 +75,11 @@ Without a speech key the app works from the keyboard only. With a speech key but
 language model, the microphone shows what was heard and the operator fills the form by hand.
 
 ### Settings page (providers and keys)
+
+Off by default: set `SETTINGS_UI=1` to get this section. Without it the link and page are not in
+the served web page and the routes below answer 404 (even with the shared token), so nothing is
+discoverable. The switch hides editing only: provider settings already stored in the database are
+still read by the resolver.
 
 The web interface has a section «Настройки» (`/#settings`, after signing in) to choose the
 language-model and speech provider, change the model, enter an API key and press «Проверить».
