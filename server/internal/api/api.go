@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -67,6 +68,10 @@ type Server struct {
 	// only where the network itself keeps strangers out. It selects the default
 	// schema; a tenant's own access code selects that tenant's schema.
 	AccessToken string
+	// AccessTokenTenant, when set, makes the shared AccessToken serve that tenant's
+	// schema (with its status rules) instead of the default one. Server-wide pages that
+	// are not per-tenant (settings) stay on the default store.
+	AccessTokenTenant uuid.UUID
 	// ProvisioningToken guards /admin/v1 (tenant provisioning). Empty turns that API off.
 	ProvisioningToken string
 	// PublicURL is the server address returned to the site as a tenant's server_url.
@@ -162,27 +167,20 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 		}
 		got := r.Header.Get("Authorization")
 		isDefault := s.AccessToken != "" && subtle.ConstantTimeCompare([]byte(got), want) == 1
+		if isDefault && s.AccessTokenTenant != uuid.Nil {
+			t, err := s.Store.Tenant(r.Context(), s.AccessTokenTenant)
+			if err != nil {
+				storeError(w, r, err)
+				return
+			}
+			s.serveTenant(w, r, next, t)
+			return
+		}
 		if code, ok := strings.CutPrefix(got, "Bearer "); ok && code != "" && !isDefault {
 			t, err := s.Store.TenantByCode(r.Context(), code)
 			switch {
 			case err == nil:
-				switch t.EffectiveStatus(s.clock()) {
-				case store.TenantExpired:
-					writeError(w, http.StatusForbidden, "tenant expired")
-					return
-				case store.TenantActive:
-				default:
-					writeError(w, http.StatusForbidden, "tenant suspended")
-					return
-				}
-				ts, err := s.tenantStore(r.Context(), t.SchemaName)
-				if err != nil {
-					storeError(w, r, err)
-					return
-				}
-				ctx := context.WithValue(r.Context(), storeKey{}, ts)
-				r = r.WithContext(context.WithValue(ctx, schemaKey{}, t.SchemaName))
-				next.ServeHTTP(w, r)
+				s.serveTenant(w, r, next, t)
 				return
 			case !errors.Is(err, store.ErrNotFound):
 				storeError(w, r, err)
@@ -195,6 +193,44 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// serveTenant applies the tenant's status rules and serves the request from its schema.
+func (s *Server) serveTenant(w http.ResponseWriter, r *http.Request, next http.Handler, t store.Tenant) {
+	switch t.EffectiveStatus(s.clock()) {
+	case store.TenantExpired:
+		writeError(w, http.StatusForbidden, "tenant expired")
+		return
+	case store.TenantActive:
+	default:
+		writeError(w, http.StatusForbidden, "tenant suspended")
+		return
+	}
+	ts, err := s.tenantStore(r.Context(), t.SchemaName)
+	if err != nil {
+		storeError(w, r, err)
+		return
+	}
+	ctx := context.WithValue(r.Context(), storeKey{}, ts)
+	next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, schemaKey{}, t.SchemaName)))
+}
+
+// CheckAccessTokenTenant fails when AccessTokenTenant names a tenant that does not
+// exist, or is set without an AccessToken to map. Call it before serving.
+func (s *Server) CheckAccessTokenTenant(ctx context.Context) error {
+	if s.AccessTokenTenant == uuid.Nil {
+		return nil
+	}
+	if s.AccessToken == "" {
+		return errors.New("ACCESS_TOKEN_TENANT is set but ACCESS_TOKEN is empty")
+	}
+	if _, err := s.Store.Tenant(ctx, s.AccessTokenTenant); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("ACCESS_TOKEN_TENANT %s: no such tenant", s.AccessTokenTenant)
+		}
+		return fmt.Errorf("ACCESS_TOKEN_TENANT %s: %w", s.AccessTokenTenant, err)
+	}
+	return nil
 }
 
 // cors lets the web build of the app, served from another origin, call the API.
@@ -219,6 +255,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// writeSourceError is writeError plus the part that failed ("speech" or "llm"), so the
+// app can say which one is down.
+func writeSourceError(w http.ResponseWriter, status int, source, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg, "source": source})
 }
 
 func storeError(w http.ResponseWriter, r *http.Request, err error) {
@@ -347,7 +389,7 @@ func (s *Server) parseText(w http.ResponseWriter, r *http.Request) {
 func (s *Server) parseVoice(w http.ResponseWriter, r *http.Request) {
 	transcriber, sttName := s.transcriber(r.Context())
 	if transcriber == nil {
-		writeError(w, http.StatusServiceUnavailable, "speech recognition is not configured on the server")
+		writeSourceError(w, http.StatusServiceUnavailable, "speech", "speech recognition is not configured on the server")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAudioBytes)
@@ -368,7 +410,7 @@ func (s *Server) parseVoice(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("transcription failed", "err", err)
 		s.recordFailure(r, "speech_error", sttName, err)
-		writeError(w, http.StatusBadGateway, "speech recognition failed")
+		writeSourceError(w, http.StatusBadGateway, "speech", "speech recognition failed")
 		return
 	}
 	if p, _ := s.parser(r.Context()); p == nil && text != "" {
@@ -387,7 +429,7 @@ func (s *Server) draft(w http.ResponseWriter, r *http.Request, text string) {
 	}
 	parser, llmName := s.parser(r.Context())
 	if parser == nil {
-		writeError(w, http.StatusServiceUnavailable, "phrase parsing is not configured on the server")
+		writeSourceError(w, http.StatusServiceUnavailable, "llm", "phrase parsing is not configured on the server")
 		return
 	}
 	catalog, err := s.store(r).Catalog(r.Context())
@@ -401,7 +443,7 @@ func (s *Server) draft(w http.ResponseWriter, r *http.Request, text string) {
 	if err != nil {
 		slog.Error("parsing failed", "err", err)
 		s.recordFailure(r, "llm_error", llmName, err)
-		writeError(w, http.StatusBadGateway, "could not understand the phrase")
+		writeSourceError(w, http.StatusBadGateway, "llm", "could not understand the phrase")
 		return
 	}
 	writeJSON(w, http.StatusOK, resolve(catalog, text, d))

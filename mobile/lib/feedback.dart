@@ -85,7 +85,7 @@ class FeedbackService {
   }
 
   /// Called by [ApiClient] for every failed call.
-  void onApiError(String path, ApiException e) => logError('$path: ${e.status} ${e.message}');
+  void onApiError(String path, ApiException e) => logError('$path: ${e.status} ${e.source == null ? '' : '[${e.source}] '}${e.message}');
 
   Future<List<Map<String, dynamic>>> pending() async {
     final p = await SharedPreferences.getInstance();

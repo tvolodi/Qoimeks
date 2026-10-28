@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:qoimeks/api.dart';
+import 'package:qoimeks/l10n.dart';
 import 'package:qoimeks/operation_screen.dart';
 import 'package:qoimeks/settings.dart';
 import 'package:qoimeks/voice.dart';
@@ -30,6 +31,11 @@ const _b02 = {'id': 11, 'code': 'B-02', 'name': 'Ряд B'};
 class FakeServer {
   Map<String, dynamic> draft = {};
   int postStatus = 201;
+
+  /// When set, /api/voice answers this status and body (or the network is down).
+  int? voiceStatus;
+  Map<String, dynamic> voiceBody = {};
+  bool networkDown = false;
   final posted = <Map<String, dynamic>>[];
   final authHeaders = <String?>{};
 
@@ -41,6 +47,7 @@ class FakeServer {
 
   late final client = MockClient((req) async {
     authHeaders.add(req.headers['Authorization']);
+    if (networkDown && req.url.path == '/api/voice') throw http.ClientException('no route to host');
     switch (req.url.path) {
       case '/api/catalog':
         return _json({
@@ -53,6 +60,7 @@ class FakeServer {
           {'sku_id': 1, 'location_id': 11, 'location_code': 'B-02', 'qty': 40},
         ]);
       case '/api/voice':
+        if (voiceStatus != null) return _json(voiceBody, voiceStatus!);
         return _json(draft);
       case '/api/movements':
         final body = jsonDecode(req.body) as Map<String, dynamic>;
@@ -233,5 +241,75 @@ void main() {
     await tester.pumpAndSettle();
     expect(server.posted, hasLength(2));
     expect(server.posted[0]['id'], server.posted[1]['id']);
+  });
+
+  group('unavailable parts are named, and the form still works by hand', () {
+    final cases = <String, void Function(FakeServer)>{
+      'server': (s) => s.networkDown = true,
+      'speech': (s) => s
+        ..voiceStatus = 503
+        ..voiceBody = {'error': 'speech recognition is not configured on the server', 'source': 'speech'},
+      'llm': (s) => s
+        ..voiceStatus = 502
+        ..voiceBody = {'error': 'could not understand the phrase', 'source': 'llm'},
+    };
+    const ru = {
+      'server': 'Сервер недоступен',
+      'speech': 'Распознавание речи недоступно',
+      'llm': 'Языковая модель недоступна',
+    };
+
+    for (final entry in cases.entries) {
+      testWidgets('${entry.key} down', (tester) async {
+        final server = FakeServer();
+        entry.value(server);
+        await pumpForm(tester, server);
+        await tester.tap(find.byKey(const Key('mic')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('mic')));
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining(ru[entry.key]!), findsOneWidget);
+        for (final other in ru.entries.where((e) => e.key != entry.key)) {
+          expect(find.textContaining(other.value), findsNothing);
+        }
+        expect(find.textContaining('вручную'), entry.key == 'server' ? findsNothing : findsOneWidget);
+
+        // Fill the form by hand and post it.
+        await tester.tap(find.byKey(const Key('sku')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Гайка М8'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byKey(const Key('qty')), '3');
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('post')));
+        await tester.pumpAndSettle();
+        expect(server.posted.single['qty'], 3);
+        expect(server.posted.single['source'], 'keyboard');
+      });
+    }
+
+    test('messages exist in Russian and Kazakh', () {
+      for (final e in [
+        const ApiException(0, 'x'),
+        const ApiException(503, 'x', source: 'speech'),
+        const ApiException(502, 'x', source: 'llm'),
+      ]) {
+        final ru = const Strings('ru').error(e);
+        final kk = const Strings('kk').error(e);
+        expect(ru, isNot(startsWith('Ошибка')));
+        expect(kk, isNot(ru));
+      }
+      expect(const Strings('kk').error(const ApiException(502, 'x', source: 'llm')), contains('қолмен'));
+    });
+
+    test('a failed call is written to the local error log with its source', () async {
+      final seen = <String>[];
+      final api = ApiClient('http://s',
+          client: MockClient((_) async => http.Response('{"error":"e","source":"llm"}', 502)),
+          onError: (path, e) => seen.add('$path ${e.status} ${e.source}'));
+      await expectLater(api.voice(Uint8List(1), 'a.m4a', 'ru'), throwsA(isA<ApiException>()));
+      expect(seen, ['/api/voice 502 llm']);
+    });
   });
 }

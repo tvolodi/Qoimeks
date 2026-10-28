@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/google/uuid"
+
 	"qoimeks/server/internal/api"
 	"qoimeks/server/internal/config"
 	"qoimeks/server/internal/parse"
@@ -50,6 +52,19 @@ func main() {
 		PublicURL:         os.Getenv("PUBLIC_URL"),
 	}
 	defer srv.Close()
+	if v := os.Getenv("ACCESS_TOKEN_TENANT"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			slog.Error("ACCESS_TOKEN_TENANT is not a tenant UUID", "err", err)
+			os.Exit(1)
+		}
+		srv.AccessTokenTenant = id
+		if err := srv.CheckAccessTokenTenant(ctx); err != nil {
+			slog.Error("cannot start", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("ACCESS_TOKEN serves a tenant schema", "tenant", id)
+	}
 	switch {
 	case srv.ProvisioningToken == "":
 		slog.Info("PROVISIONING_TOKEN is not set: the tenant API (/admin/v1) is off")

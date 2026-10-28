@@ -29,6 +29,7 @@ On first launch the app asks for the operator's name and the server address
 | `DATABASE_URL` | `postgres://qoimeks:qoimeks@127.0.0.1:5433/qoimeks` | PostgreSQL |
 | `LISTEN_ADDR` | `:8080` | HTTP address |
 | `ACCESS_TOKEN` | — | shared access code every app must send; without it anyone who can reach the server can use it |
+| `ACCESS_TOKEN_TENANT` | — | tenant UUID. When set, requests with the shared `ACCESS_TOKEN` are served from that tenant's schema, with the tenant's status rules (suspended/expired → 403); the server refuses to start if the tenant does not exist or `ACCESS_TOKEN` is empty. Unset: the shared token uses the default schema, as before. Admin routes keep `PROVISIONING_TOKEN`. Server-wide settings endpoints (shared `ACCESS_TOKEN` only) stay on the default schema/server-wide store regardless. Used for the Client 1 migration (`project/client1-migration-plan.md`) |
 | `PROVISIONING_TOKEN` | — | bearer token of the tenant API (`/admin/v1`) used by the ai-dala.com site; without it the API is off (404). Use 32+ random characters |
 | `PUBLIC_URL` | `https://qoimeks.ai-dala.com` | server address returned to the site as a tenant's `server_url` |
 | `SEED_DEMO` | — | `1` loads a demo catalog into an empty database |
