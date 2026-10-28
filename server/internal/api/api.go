@@ -87,6 +87,9 @@ type Server struct {
 	Providers ProviderResolver
 	// Settings saves and shows the stored provider settings (web admin). Nil turns that API off.
 	Settings SettingsService
+	// Maintenance, when true, answers every state-changing request (POST, PUT, PATCH,
+	// DELETE) with 503 and Retry-After; reads, /healthz and CORS preflight keep working.
+	Maintenance bool
 
 	now     func() time.Time // tests replace the clock of the admin rate limiter
 	mu      sync.Mutex
@@ -152,7 +155,27 @@ func (s *Server) Handler() http.Handler {
 	s.importRoutes(mux)
 	s.adminRoutes(mux)
 	s.settingsRoutes(mux)
-	return cors(s.requireToken(mux))
+	return cors(s.freezeWrites(s.requireToken(mux)))
+}
+
+// maintenanceRetryAfter is the Retry-After (seconds) sent while writes are frozen.
+const maintenanceRetryAfter = "300"
+
+// freezeWrites refuses every request that could change state while Maintenance is on.
+// The body carries no "source", so the app shows its generic "server unavailable" message.
+func (s *Server) freezeWrites(next http.Handler) http.Handler {
+	if !s.Maintenance {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			w.Header().Set("Retry-After", maintenanceRetryAfter)
+			writeError(w, http.StatusServiceUnavailable, "server is in maintenance mode, try again later")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireToken guards /api/. A bearer that is a tenant's access code selects that

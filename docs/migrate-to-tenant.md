@@ -40,12 +40,14 @@ Exit code 0: success. 1: refused or failed, nothing was changed.
 
 ## Procedure and rollback
 
-1. Dump before anything else, and keep the file outside the server:
+1. Freeze writes: restart the server with `MAINTENANCE_MODE=1` so nothing changes during the
+   copy (writes get 503, reads and `/healthz` keep working); unfreeze after the check.
+2. Dump before anything else, and keep the file outside the server:
    `pg_dump --format=custom --file=qoimeks-before-copy.dump "$DATABASE_URL"`.
-2. Create the tenant (admin API `POST /tenants`) if it does not exist yet.
-3. Run with `--dry-run`, read the report.
-4. Run for real. The run is one transaction: if it fails, the tenant is as it was.
-5. Rollback after a successful run (before the tenant is used): the copy is additive, the
+3. Create the tenant (admin API `POST /tenants`) if it does not exist yet.
+4. Run with `--dry-run`, read the report.
+5. Run for real. The run is one transaction: if it fails, the tenant is as it was.
+6. Rollback after a successful run (before the tenant is used): the copy is additive, the
    source is intact, so switching back means pointing clients at the shared access token
    again. To empty the tenant's tables, the append-only triggers forbid DELETE and
    TRUNCATE; drop and recreate the tenant schema (`drop schema t_<id> cascade`, then
