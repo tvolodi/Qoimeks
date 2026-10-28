@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,6 +51,11 @@ func main() {
 		AccessToken:       os.Getenv("ACCESS_TOKEN"),
 		ProvisioningToken: os.Getenv("PROVISIONING_TOKEN"),
 		PublicURL:         os.Getenv("PUBLIC_URL"),
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MAINTENANCE_MODE"))) {
+	case "1", "true", "on", "yes":
+		srv.Maintenance = true
+		slog.Warn("MAINTENANCE_MODE is on: writes are refused with 503")
 	}
 	defer srv.Close()
 	if v := os.Getenv("ACCESS_TOKEN_TENANT"); v != "" {
