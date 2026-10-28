@@ -44,9 +44,9 @@ const _ru = {
   'recognizing': 'Распознаю…',
   'retry': 'Повторить',
   'loading_failed': 'Не удалось загрузить справочник',
-  'err_network': 'Нет связи с сервером',
-  'err_voice_off': 'Голосовой ввод не настроен на сервере',
-  'err_not_understood': 'Не удалось распознать. Повторите или введите вручную',
+  'err_network': 'Сервер недоступен. Проверьте связь: провести операцию сейчас нельзя, сохранённые черновики остаются',
+  'err_speech_down': 'Распознавание речи недоступно или не настроено. Наберите фразу или заполните форму вручную',
+  'err_llm_down': 'Языковая модель недоступна, фраза не разобрана. Заполните форму вручную',
   'err_silence': 'Ничего не слышно. Повторите',
   'err_mic': 'Нет доступа к микрофону',
   'err_already_posted': 'Эта операция уже была проведена. Проверьте историю',
@@ -114,10 +114,9 @@ const _kk = {
   'recognizing': 'Танып жатырмын…',
   'retry': 'Қайталау',
   'loading_failed': 'Анықтамалықты жүктеу мүмкін болмады',
-  'err_network': 'Сервермен байланыс жоқ',
-  'err_voice_off': 'Дауыспен енгізу серверде бапталмаған',
-  'err_not_understood':
-      'Тану мүмкін болмады. Қайталаңыз немесе қолмен енгізіңіз',
+  'err_network': 'Сервер қолжетімсіз. Байланысты тексеріңіз: операцияны қазір өткізу мүмкін емес, сақталған жобалар қалады',
+  'err_speech_down': 'Сөзді тану қолжетімсіз немесе бапталмаған. Фразаны теріңіз немесе форманы қолмен толтырыңыз',
+  'err_llm_down': 'Тілдік модель қолжетімсіз, фраза талданбады. Форманы қолмен толтырыңыз',
   'err_silence': 'Ештеңе естілмеді. Қайталаңыз',
   'err_mic': 'Микрофонға рұқсат жоқ',
   'err_already_posted': 'Бұл операция бұрын өткізілген. Тарихты тексеріңіз',
@@ -155,13 +154,14 @@ class Strings {
   /// A message an operator can act on, for any failed server call.
   String error(Object e) {
     if (e is! ApiException) return '${call('err_generic')}: $e';
+    if (e.source == 'speech') return call('err_speech_down');
+    if (e.source == 'llm') return call('err_llm_down');
     return switch (e.status) {
       0 => call('err_network'),
       401 => call('err_access'),
       409 => call('err_already_posted'),
       422 => call('err_silence'),
-      502 => call('err_not_understood'),
-      503 => call('err_voice_off'),
+      502 || 503 || 504 => call('err_network'),
       _ => '${call('err_generic')}: ${e.message}',
     };
   }

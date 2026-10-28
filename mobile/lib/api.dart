@@ -139,11 +139,14 @@ class Draft {
 }
 
 class ApiException implements Exception {
-  const ApiException(this.status, this.message);
+  const ApiException(this.status, this.message, {this.source});
 
   /// HTTP status, or 0 when the server could not be reached.
   final int status;
   final String message;
+
+  /// Which part failed behind the server, when it says so: 'speech' or 'llm'.
+  final String? source;
 
   @override
   String toString() => message;
@@ -205,7 +208,11 @@ class ApiClient {
       body = null;
     }
     if (resp.statusCode >= 400) {
-      final err = ApiException(resp.statusCode, body is Map ? '${body['error']}' : 'HTTP ${resp.statusCode}');
+      final err = ApiException(
+        resp.statusCode,
+        body is Map ? '${body['error']}' : 'HTTP ${resp.statusCode}',
+        source: body is Map && body['source'] is String ? body['source'] as String : null,
+      );
       if (observe) onError?.call(path, err);
       throw err;
     }
