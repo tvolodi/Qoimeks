@@ -243,27 +243,6 @@ the same files, so its images look the same on any machine. The web pages keep s
 `scripts/publish-site.sh <target>`. Release and publish steps and the nginx snippet are in
 [docs/qoimeks-site.md](docs/qoimeks-site.md).
 
-## Release build
-
-`scripts/release-android.sh` builds the signed release APK and writes the files to publish
-into an output folder outside git (default `../release-out`):
-
-```sh
-scripts/release-android.sh --first-release --notes-ru "Что нового" --notes-kk "Жаңалықтар"
-scripts/release-android.sh --notes-file notes.txt     # lines "ru: ..." and "kk: ..."
-scripts/release-android.sh --dry-run ...              # run the checks, print the build command
-```
-
-The output folder gets `qoimeks-<version>.apk`, `qoimeks-<version>.apk.sha256` and
-`latest.json` (`versionCode`, `versionName`, `url`, `sha256`, `minVersionCode`, `notes.ru`,
-`notes.kk`, `published`). Version name and code come from `mobile/pubspec.yaml`. The script
-fails when `mobile/android/key.properties` is missing (a release is never signed with the
-debug key), and when the version code is not higher than the last published one, read from
-`<out>/latest.json` or `--last-published N`; with neither, pass `--first-release`.
-Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoimeks/`),
-`--min-version-code N` (default: the previous manifest value). The script test is
-`bash scripts/test-release.sh`; `go test ./...` runs it too.
-
 ### Update check in the app
 
 The release build passes `--dart-define=UPDATE_MANIFEST_URL=<base-url>latest.json` to
@@ -290,6 +269,24 @@ preferences (time, screen, message); the access code and bearer tokens are never
 saved code is replaced by `[redacted]`. When the server cannot be reached the report is kept
 on the phone, the form says so, and it is sent on the next app start or after the next
 successful API call, once.
+
+## Для операторов
+
+Приложение Qoimeks записывает приход, расход, перемещение и пересчёт товара на складе.
+Администратору сервера: [docs/self-host.md](docs/self-host.md).
+
+1. **Установите приложение.** Откройте на телефоне страницу `https://ai-dala.com/qoimeks/`,
+   нажмите кнопку «Скачать» и разрешите установку из этого источника. Подробные шаги,
+   в том числе для обновления со старой версии (её нужно сначала удалить), есть на самой
+   странице; как она устроена — в [docs/qoimeks-site.md](docs/qoimeks-site.md).
+2. **Подключитесь к серверу.** Откройте «Настройки», нажмите «Сканировать QR» и наведите
+   камеру на QR-код в блоке «Подключить приложение» веб-страницы сервера (его показывает
+   администратор). Затем введите своё имя и нажмите «Сохранить». Адрес и код доступа можно
+   ввести и вручную.
+3. **Запишите операцию.** На главном экране выберите вид операции, товар и место, укажите
+   количество — руками или голосом, нажав на микрофон. Проверьте черновик и нажмите
+   «Провести». Ошибочную операцию отменяют в «Истории»: она не удаляется, а гасится
+   обратной записью.
 
 ## How data is stored
 
