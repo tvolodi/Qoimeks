@@ -337,6 +337,15 @@ void main() {
 
       await tester.tap(find.byKey(const Key('queue_delete_a')));
       await tester.pumpAndSettle();
+      expect(find.text('Удалить неотправленную операцию?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('queue_delete_keep')));
+      await tester.pumpAndSettle();
+      expect(q.items, hasLength(1));
+
+      await tester.tap(find.byKey(const Key('queue_delete_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('queue_delete_confirm')));
+      await tester.pumpAndSettle();
       expect(q.items, isEmpty);
       expect(find.text('Очередь пуста'), findsOneWidget);
     });
@@ -380,7 +389,7 @@ void main() {
 
 void l10nParity() {
   test('queue texts exist in Russian and Kazakh', () {
-    for (final key in ['queued_saved', 'queue_waiting', 'queue_title', 'queue_empty', 'queue_rejected', 'queue_delete', 'queue_foreign', 'balance_stale']) {
+    for (final key in ['queued_saved', 'queue_waiting', 'queue_title', 'queue_empty', 'queue_rejected', 'queue_delete', 'queue_delete_q', 'queue_keep', 'queue_delete_action', 'queue_foreign', 'balance_stale']) {
       final ru = const Strings('ru')(key);
       final kk = const Strings('kk')(key);
       expect(ru, isNot(key));

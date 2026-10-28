@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'design/status.dart';
+import 'design/theme.dart';
 import 'design/tokens.dart';
 import 'l10n.dart';
 import 'offline_queue.dart';
@@ -35,7 +36,33 @@ class QueueScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _confirmDelete(BuildContext context, Strings s, QueuedOperation o) async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(s('queue_delete_q')),
+        content: Text('${s.kind(o.kind)}: ${o.skuName}, ${fmtQty(o.qty)} ${o.unit}'),
+        actions: [
+          TextButton(
+            key: const Key('queue_delete_keep'),
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(s('queue_keep')),
+          ),
+          // The destructive choice is the only place the danger colour is used.
+          FilledButton(
+            key: const Key('queue_delete_confirm'),
+            style: FilledButton.styleFrom(backgroundColor: LightColors.error, foregroundColor: LightColors.onError),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(s('queue_delete_action')),
+          ),
+        ],
+      ),
+    );
+    if (yes == true) await queue.dismiss(o.id);
+  }
+
   Widget _tile(BuildContext context, Strings s, QueuedOperation o) {
+    final mono = monoStyle();
     final here = o.serverUrl == OfflineQueue.normalizeUrl(settings.serverUrl) && o.accessCode == settings.accessCode;
     final place = o.toLocationCode.isEmpty ? o.locationCode : '${o.locationCode} → ${o.toLocationCode}';
     final rejected = here && o.rejection != null;
@@ -47,7 +74,13 @@ class QueueScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('${s.kind(o.kind)} · ${o.skuName}', style: Theme.of(context).textTheme.titleMedium),
-            Text('$place · ${fmtQty(o.qty)} ${o.unit}'),
+            Text.rich(TextSpan(children: [
+              TextSpan(text: o.skuCode, style: mono),
+              const TextSpan(text: ' · '),
+              TextSpan(text: place, style: mono),
+              const TextSpan(text: ' · '),
+              TextSpan(text: '${fmtQty(o.qty)} ${o.unit}', style: mono),
+            ])),
             if (!here) ...[
               const SizedBox(height: AppSpace.s2),
               StatusBanner(kind: StatusKind.info, text: s('queue_foreign')),
@@ -71,7 +104,7 @@ class QueueScreen extends StatelessWidget {
                     ),
                   TextButton(
                     key: Key('queue_delete_${o.id}'),
-                    onPressed: () => queue.dismiss(o.id),
+                    onPressed: () => _confirmDelete(context, s, o),
                     child: Text(s('queue_delete')),
                   ),
                 ],
