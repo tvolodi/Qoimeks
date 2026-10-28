@@ -45,6 +45,8 @@ func invalid(format string, a ...any) error {
 type Store struct {
 	pool *pgxpool.Pool
 	cfg  *pgxpool.Config
+	// schema is empty for the default-schema store and the schema name for a tenant store.
+	schema string
 }
 
 func Open(ctx context.Context, url string) (*Store, error) {

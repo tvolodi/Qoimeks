@@ -148,7 +148,7 @@ func (s *Store) ForSchema(ctx context.Context, schema string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{pool: pool, cfg: cfg}, nil
+	return &Store{pool: pool, cfg: cfg, schema: schema}, nil
 }
 
 // TenantStore opens the schema and brings it up to date before it serves requests.
