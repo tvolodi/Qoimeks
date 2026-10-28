@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'design/status.dart';
 import 'design/theme.dart';
 import 'design/tokens.dart';
+import 'feedback.dart';
+import 'feedback_screen.dart';
 import 'l10n.dart';
 import 'qr_scanner.dart';
 import 'setup_qr.dart';
@@ -16,11 +18,13 @@ class SettingsScreen extends StatefulWidget {
     required this.settings,
     this.firstRun = false,
     this.updates,
+    this.feedback,
     this.scanner = const CameraQrScanner(),
   });
 
   final AppSettings settings;
   final UpdateChecker? updates;
+  final FeedbackService? feedback;
   final QrScanner scanner;
   final bool firstRun;
 
@@ -182,6 +186,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Text(s('save')),
               ),
             ),
+            if (widget.feedback != null) ...[
+              const SizedBox(height: AppSpace.s6),
+              OutlinedButton.icon(
+                key: const Key('report_problem'),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => FeedbackScreen(
+                    settings: widget.settings,
+                    feedback: widget.feedback!,
+                    from: 'settings',
+                  ),
+                )),
+                icon: const Icon(Icons.feedback_outlined),
+                label: Text(s('report_problem')),
+              ),
+            ],
             if (widget.updates != null) ...[
               const SizedBox(height: AppSpace.s6),
               FutureBuilder<String>(

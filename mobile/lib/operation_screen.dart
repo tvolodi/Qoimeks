@@ -8,6 +8,8 @@ import 'design/tokens.dart';
 import 'history_screen.dart';
 import 'l10n.dart';
 import 'picker.dart';
+import 'feedback.dart';
+import 'feedback_screen.dart';
 import 'settings.dart';
 import 'settings_screen.dart';
 import 'update.dart';
@@ -18,10 +20,11 @@ enum _Mic { idle, recording, busy }
 /// The one form of the app. Every field can be typed or picked by hand, or the
 /// operator can say the whole operation and only check what was filled in.
 class OperationScreen extends StatefulWidget {
-  const OperationScreen({super.key, required this.settings, required this.api, required this.voice, this.updates});
+  const OperationScreen({super.key, required this.settings, required this.api, required this.voice, this.updates, this.feedback});
 
   final AppSettings settings;
   final UpdateChecker? updates;
+  final FeedbackService? feedback;
   final ApiClient api;
   final VoiceCapture voice;
 
@@ -247,11 +250,24 @@ class _OperationScreenState extends State<OperationScreen> {
               builder: (_) => HistoryScreen(settings: widget.settings, api: widget.api),
             )),
           ),
+          if (widget.feedback != null)
+            IconButton(
+              key: const Key('report_problem'),
+              tooltip: _s('report_problem'),
+              icon: const Icon(Icons.feedback_outlined),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => FeedbackScreen(
+                  settings: widget.settings,
+                  feedback: widget.feedback!,
+                  from: 'operation',
+                ),
+              )),
+            ),
           IconButton(
             tooltip: _s('settings'),
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => SettingsScreen(settings: widget.settings, updates: widget.updates),
+              builder: (_) => SettingsScreen(settings: widget.settings, updates: widget.updates, feedback: widget.feedback),
             )),
           ),
         ],

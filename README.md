@@ -271,6 +271,17 @@ the manifest's `url` in the browser (the app has no install permission). Setting
 installed version and a "check for updates" button that checks at once. A missing network or a
 broken manifest shows nothing on the automatic check and never blocks work.
 
+### Report a problem from the app
+
+The main screen (feedback icon) and Settings have «Сообщить о проблеме / Пікір жіберу»: a form
+with free text. It posts to `POST /api/feedback` with the text, app version, Android version,
+device model, operator name, the screen it was sent from and the app's last 50 errors
+(`voice_text` is empty until voice notes exist). The errors are kept on the phone in shared
+preferences (time, screen, message); the access code and bearer tokens are never stored — the
+saved code is replaced by `[redacted]`. When the server cannot be reached the report is kept
+on the phone, the form says so, and it is sent on the next app start or after the next
+successful API call, once.
+
 ## How data is stored
 
 Two tables, both append-only (the database rejects `UPDATE` and `DELETE`):
