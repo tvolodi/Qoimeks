@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"qoimeks/server/internal/parse"
 	"qoimeks/server/internal/providers"
@@ -85,7 +86,7 @@ type providerSettingRequest struct {
 func (s *Server) putProviderSettings(w http.ResponseWriter, r *http.Request) {
 	var in providerSettingRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSettingsBody)).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "request body is not valid JSON")
+		writeError(w, http.StatusBadRequest, "тело запроса не является корректным JSON")
 		return
 	}
 	err := s.Settings.Save(r.Context(), providers.ProviderSettingInput{
@@ -116,7 +117,7 @@ type testAnswer struct {
 func (s *Server) testProvider(w http.ResponseWriter, r *http.Request) {
 	var in testRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSettingsBody)).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "request body is not valid JSON")
+		writeError(w, http.StatusBadRequest, "тело запроса не является корректным JSON")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), testTimeout)
@@ -128,7 +129,7 @@ func (s *Server) testProvider(w http.ResponseWriter, r *http.Request) {
 	case providers.KindSTT:
 		err = s.testSTT(ctx)
 	default:
-		writeError(w, http.StatusBadRequest, "unknown kind")
+		writeError(w, http.StatusBadRequest, "неизвестный вид настройки")
 		return
 	}
 	if err == nil {
@@ -138,7 +139,11 @@ func (s *Server) testProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	msg := s.newRedactor(r).str(err.Error())
 	if len(msg) > maxTestError {
-		msg = msg[:maxTestError] + "…"
+		cut := maxTestError
+		for cut > 0 && !utf8.RuneStart(msg[cut]) {
+			cut--
+		}
+		msg = msg[:cut] + "…"
 	}
 	slog.Info("provider test", "kind", in.Kind, "ok", false, "err", msg)
 	writeJSON(w, http.StatusOK, testAnswer{OK: false, Message: msg})

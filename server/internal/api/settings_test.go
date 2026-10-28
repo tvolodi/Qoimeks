@@ -78,6 +78,7 @@ func TestSettingsAccess(t *testing.T) {
 		srv, url := settingsServer(t, sharedToken, &fakeProviders{})
 		call(t, "GET", url+"/api/settings/providers", "", nil, 401, nil)
 		call(t, "PUT", url+"/api/settings/providers", "", put, 401, nil)
+		call(t, "POST", url+"/api/settings/providers/test", "", map[string]string{"kind": "llm"}, 401, nil)
 		if rows, _ := srv.Store.ListProviderSettings(t.Context()); len(rows) != 0 {
 			t.Fatalf("stored %d rows", len(rows))
 		}

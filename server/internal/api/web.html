@@ -591,7 +591,10 @@ async function call(path, options) {
   if (!resp.ok) {
     let body = null;
     try { body = await resp.json(); } catch (e) { /* not JSON */ }
-    throw new Error(messages[resp.status] || (body && body.error) || ('Ошибка ' + resp.status));
+    const own = body && body.error;
+    // the settings routes explain themselves; the generic map is for the import routes
+    if (path.startsWith('/api/settings/') && own) throw new Error(own);
+    throw new Error(messages[resp.status] || own || ('Ошибка ' + resp.status));
   }
   return resp;
 }
