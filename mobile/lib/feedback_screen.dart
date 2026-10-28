@@ -43,7 +43,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       navigator.pop();
     } on ApiException catch (e) {
       if (!mounted) return;
-      showStatusSnack(context, '${s('report_rejected')}: ${e.message}', StatusKind.error);
+      showStatusSnack(context, e.status == 400 ? s('report_rejected') : e.message, StatusKind.error);
       setState(() => _sending = false);
     }
   }
@@ -72,7 +72,13 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             child: FilledButton(
               key: const Key('report_send'),
               onPressed: _sending || _text.text.trim().isEmpty ? null : _send,
-              child: Text(s('report_send')),
+              child: _sending
+                  ? const SizedBox(
+                      width: AppSize.icon,
+                      height: AppSize.icon,
+                      child: CircularProgressIndicator(strokeWidth: AppSpace.s1, color: LightColors.onPrimary),
+                    )
+                  : Text(s('report_send')),
             ),
           ),
         ],
