@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -7,7 +9,9 @@ import 'design/theme.dart';
 import 'design/tokens.dart';
 import 'history_screen.dart';
 import 'l10n.dart';
+import 'offline_queue.dart';
 import 'picker.dart';
+import 'queue_screen.dart';
 import 'feedback.dart';
 import 'feedback_screen.dart';
 import 'settings.dart';
@@ -20,9 +24,10 @@ enum _Mic { idle, recording, busy }
 /// The one form of the app. Every field can be typed or picked by hand, or the
 /// operator can say the whole operation and only check what was filled in.
 class OperationScreen extends StatefulWidget {
-  const OperationScreen({super.key, required this.settings, required this.api, required this.voice, this.updates, this.feedback});
+  const OperationScreen({super.key, required this.settings, required this.api, required this.voice, this.updates, this.feedback, this.offlineQueue});
 
   final AppSettings settings;
+  final OfflineQueue? offlineQueue;
   final UpdateChecker? updates;
   final FeedbackService? feedback;
   final ApiClient api;
@@ -32,7 +37,7 @@ class OperationScreen extends StatefulWidget {
   State<OperationScreen> createState() => _OperationScreenState();
 }
 
-class _OperationScreenState extends State<OperationScreen> {
+class _OperationScreenState extends State<OperationScreen> with WidgetsBindingObserver {
   static const _uuid = Uuid();
 
   Catalog? _catalog;
@@ -53,6 +58,9 @@ class _OperationScreenState extends State<OperationScreen> {
   List<Sku> _candidates = const [];
 
   List<BalanceRow>? _balances;
+  // Last balances fetched per SKU; shown, marked as possibly old, when the server cannot be reached.
+  final _balanceCache = <int, List<BalanceRow>>{};
+  bool _balancesStale = false;
   _Mic _mic = _Mic.idle;
   bool _posting = false;
 
@@ -61,11 +69,18 @@ class _OperationScreenState extends State<OperationScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadCatalog();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_flushQueue());
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _qty.dispose();
     widget.voice.dispose();
     super.dispose();
@@ -105,6 +120,7 @@ class _OperationScreenState extends State<OperationScreen> {
     setState(() {
       _sku = sku;
       _balances = null;
+      _balancesStale = false;
       if (_location == null || _locationIsUsual) {
         _location = _catalog!.location(sku?.locationId);
         _locationIsUsual = _location != null;
@@ -112,9 +128,17 @@ class _OperationScreenState extends State<OperationScreen> {
     });
     if (sku == null) return;
     widget.api.balances(sku.id).then((rows) {
+      _balanceCache[sku.id] = rows;
       if (mounted && _sku == sku) setState(() => _balances = rows);
-    }).catchError((_) {
-      // The balance line is a hint; posting works without it.
+    }).catchError((Object e) {
+      // The balance line is a hint; posting works without it. Without a connection show the last known one, marked.
+      final old = _balanceCache[sku.id];
+      if (mounted && _sku == sku && old != null && e is ApiException && (e.status == 0 || e.status >= 500)) {
+        setState(() {
+          _balances = old;
+          _balancesStale = true;
+        });
+      }
     });
   }
 
@@ -209,9 +233,64 @@ class _OperationScreenState extends State<OperationScreen> {
     });
   }
 
+  QueuedOperation _queuedOperation() => QueuedOperation(
+        id: _draftId,
+        kind: _kind,
+        skuId: _sku!.id,
+        locationId: _location!.id,
+        toLocationId: _kind == 'transfer' ? _toLocation!.id : null,
+        qty: _qtyValue!,
+        operator: widget.settings.operator,
+        source: _source,
+        transcript: _transcript,
+        skuName: _sku!.name,
+        skuCode: _sku!.code,
+        unit: _sku!.unit,
+        locationCode: _location!.code,
+        toLocationCode: _kind == 'transfer' ? _toLocation!.code : '',
+        serverUrl: OfflineQueue.normalizeUrl(widget.settings.serverUrl),
+        accessCode: widget.settings.accessCode,
+        queuedAt: DateTime.now(),
+      );
+
+  Future<void> _flushQueue() {
+    final q = widget.offlineQueue;
+    if (q == null) return Future.value();
+    return q.flush(widget.api, serverUrl: widget.settings.serverUrl, accessCode: widget.settings.accessCode);
+  }
+
+  /// Older operations are still waiting: this one goes behind them and everything is sent
+  /// oldest first, because a stock count sets the balance and must not overtake a receipt.
+  Future<void> _submitBehindQueue(OfflineQueue q) async {
+    if (!await q.enqueue(_queuedOperation())) {
+      if (mounted) _toast(_s('err_network'), StatusKind.error);
+      return;
+    }
+    await _flushQueue();
+    if (!mounted) return;
+    final left = q.byId(_draftId);
+    if (left == null) {
+      _toast(_s('posted'), StatusKind.success);
+      _reset();
+    } else if (left.rejection != null) {
+      // Refused: take it out, so the corrected form goes with a new id (the old one never reached the ledger).
+      _toast('${_s('queue_rejected')}: ${left.rejection}', StatusKind.error);
+      await q.dismiss(left.id);
+      if (mounted) setState(() => _draftId = _uuid.v4());
+    } else {
+      _toast(_s('queued_saved'), StatusKind.warning);
+      _reset();
+    }
+  }
+
   Future<void> _submit() async {
     setState(() => _posting = true);
+    final q = widget.offlineQueue;
     try {
+      if (q != null && q.waiting(widget.settings.serverUrl, widget.settings.accessCode) > 0) {
+        await _submitBehindQueue(q);
+        return;
+      }
       final m = await widget.api.post(
         id: _draftId,
         kind: _kind,
@@ -228,6 +307,13 @@ class _OperationScreenState extends State<OperationScreen> {
       _toast('${_s('posted')} · $after', StatusKind.success);
       _reset();
     } on ApiException catch (e) {
+      // Unreachable or failing server (not a wrong access code, which the operator must see): keep it on the phone.
+      if (q != null && e.status != 401 && OfflineQueue.isTemporary(e) && await q.enqueue(_queuedOperation())) {
+        if (!mounted) return;
+        _toast(_s('queued_saved'), StatusKind.warning);
+        _reset();
+        return;
+      }
       if (!mounted) return;
       _toast(_s.error(e), StatusKind.error);
       // 409: this draft was already saved by an earlier attempt, start a new one.
@@ -275,10 +361,38 @@ class _OperationScreenState extends State<OperationScreen> {
       body: Column(
         children: [
           if (widget.updates != null) UpdateBanner(checker: widget.updates!),
+          if (widget.offlineQueue != null) _buildQueueBanner(widget.offlineQueue!),
           Expanded(child: _catalog == null ? _buildLoading() : _buildForm(context)),
         ],
       ),
       bottomNavigationBar: _catalog == null ? null : _buildActions(context),
+    );
+  }
+
+  Widget _buildQueueBanner(OfflineQueue q) {
+    return ListenableBuilder(
+      listenable: q,
+      builder: (context, _) {
+        final url = widget.settings.serverUrl;
+        final code = widget.settings.accessCode;
+        final n = q.waiting(url, code);
+        if (n == 0 && q.items.isEmpty) return const SizedBox.shrink();
+        final problem = q.rejected(url, code).isNotEmpty;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpace.s4, AppSpace.s2, AppSpace.s4, 0),
+          child: InkWell(
+            key: const Key('queue_banner'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => QueueScreen(settings: widget.settings, queue: q, api: widget.api),
+            )),
+            child: StatusBanner(
+              kind: problem ? StatusKind.error : StatusKind.warning,
+              text: n > 0 ? _s('queue_waiting').replaceAll('{n}', '$n') : _s('queue_title'),
+              trailing: const Icon(Icons.chevron_right),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -434,6 +548,11 @@ class _OperationScreenState extends State<OperationScreen> {
     final q = _qtyValue;
     final goesNegative = here != null && q != null && (_kind == 'issue' || _kind == 'transfer') && q > here;
     return [
+      if (_balancesStale)
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpace.s2),
+          child: StatusBanner(kind: StatusKind.warning, text: _s('balance_stale')),
+        ),
       if (here != null)
         Text.rich(
           TextSpan(children: [
