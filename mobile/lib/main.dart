@@ -18,7 +18,7 @@ Future<void> main() async {
   final updates = UpdateChecker(settings: settings);
   final feedback = FeedbackService(
     settings: settings,
-    api: () => ApiClient(settings.serverUrl, accessCode: settings.accessCode),
+    api: () => ApiClient(settings.serverUrl, accessCode: settings.accessCode, operator: settings.operator, deviceInfo: readDeviceInfo),
   );
   runApp(QoimeksApp(settings: settings, updates: updates, feedback: feedback));
   unawaited(updates.checkOnStart());
@@ -51,6 +51,8 @@ class QoimeksApp extends StatelessWidget {
                 api: ApiClient(
                   settings.serverUrl,
                   accessCode: settings.accessCode,
+                  operator: settings.operator,
+                  deviceInfo: readDeviceInfo,
                   onSuccess: feedback?.retryPending,
                   onError: feedback?.onApiError,
                 ),

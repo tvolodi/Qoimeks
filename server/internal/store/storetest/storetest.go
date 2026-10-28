@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,27 @@ import (
 
 	"qoimeks/server/internal/store"
 )
+
+var urls sync.Map // *store.Store -> database URL
+
+// Exec runs sql on the database of a store made by New, for tests that need the
+// database to misbehave (a trigger that fails, for example).
+func Exec(t *testing.T, st *store.Store, sql string) {
+	t.Helper()
+	u, ok := urls.Load(st)
+	if !ok {
+		t.Fatal("storetest.Exec: store was not made by storetest.New")
+	}
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, u.(string))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, sql); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+}
 
 // New creates a throwaway database with the demo catalog and drops it when the
 // test ends. Tests are skipped unless TEST_DATABASE_URL points at a PostgreSQL
@@ -41,7 +63,9 @@ func New(t *testing.T) *store.Store {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	urls.Store(st, u.String())
 	t.Cleanup(func() {
+		urls.Delete(st)
 		st.Close()
 		admin.Exec(ctx, "drop database "+name+" with (force)")
 		admin.Close(ctx)

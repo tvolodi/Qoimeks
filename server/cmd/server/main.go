@@ -83,15 +83,18 @@ func main() {
 			os.Exit(1)
 		}
 		srv.Parser = parser
+		srv.LLMName = label
 		slog.Info("phrases are parsed by", "llm", label)
 	}
 	eleven := config.Get("", "ELEVENLABS_API_KEY", "ELEVENLAB_API_KEY", "elevenlabs_api_key", "elevenlab_api_key")
 	sttKey, sttURL := os.Getenv("STT_API_KEY"), os.Getenv("STT_BASE_URL")
 	switch {
 	case sttKey != "" || sttURL != "":
+		srv.STTName = "openai-compatible"
 		srv.Transcriber = stt.NewOpenAICompatible(
 			config.Get("https://api.openai.com/v1", "STT_BASE_URL"), sttKey, config.Get("gpt-4o-transcribe", "STT_MODEL"))
 	case eleven != "":
+		srv.STTName = "elevenlabs"
 		srv.Transcriber = stt.NewElevenLabs(eleven, config.Get("scribe_v2", "STT_MODEL"))
 	default:
 		slog.Warn("no ELEVENLABS_API_KEY or STT_API_KEY: voice input is disabled")
