@@ -24,6 +24,40 @@ import (
 
 const maxAudioBytes = 10 << 20
 
+// ProviderResolver gives the effective language-model and speech clients per request.
+// An error (providers.ErrNotConfigured, or a bad configuration) means "not available".
+type ProviderResolver interface {
+	LLM(ctx context.Context) (parse.Parser, string, error)
+	Transcriber(ctx context.Context) (stt.Transcriber, string, error)
+	Secrets(ctx context.Context) []string
+}
+
+// parser returns the language-model client for this request and its label, or nil.
+func (s *Server) parser(ctx context.Context) (parse.Parser, string) {
+	if s.Parser != nil || s.Providers == nil {
+		return s.Parser, s.LLMName
+	}
+	p, label, err := s.Providers.LLM(ctx)
+	if err != nil {
+		slog.Warn("language model unavailable", "err", err)
+		return nil, s.LLMName
+	}
+	return p, label
+}
+
+// transcriber returns the speech client for this request and its name, or nil.
+func (s *Server) transcriber(ctx context.Context) (stt.Transcriber, string) {
+	if s.Transcriber != nil || s.Providers == nil {
+		return s.Transcriber, s.STTName
+	}
+	t, name, err := s.Providers.Transcriber(ctx)
+	if err != nil {
+		slog.Warn("speech recognition unavailable", "err", err)
+		return nil, s.STTName
+	}
+	return t, name
+}
+
 type Server struct {
 	Store *store.Store
 	// Parser and Transcriber may be nil when their service is not configured;
@@ -48,6 +82,9 @@ type Server struct {
 	// LLMName and STTName label the configured providers in recorded failures.
 	LLMName string
 	STTName string
+	// Providers, when set, supplies the parser and transcriber per request (stored
+	// settings first, environment second). Parser and Transcriber above win when set.
+	Providers ProviderResolver
 
 	now     func() time.Time // tests replace the clock of the admin rate limiter
 	mu      sync.Mutex
@@ -341,7 +378,8 @@ func (s *Server) parseText(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) parseVoice(w http.ResponseWriter, r *http.Request) {
-	if s.Transcriber == nil {
+	transcriber, sttName := s.transcriber(r.Context())
+	if transcriber == nil {
 		writeError(w, http.StatusServiceUnavailable, "speech recognition is not configured on the server")
 		return
 	}
@@ -359,14 +397,14 @@ func (s *Server) parseVoice(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	text, err := s.Transcriber.Transcribe(ctx, audio, header.Filename, r.FormValue("lang"))
+	text, err := transcriber.Transcribe(ctx, audio, header.Filename, r.FormValue("lang"))
 	if err != nil {
 		slog.Error("transcription failed", "err", err)
-		s.recordFailure(r, "speech_error", s.STTName, err)
+		s.recordFailure(r, "speech_error", sttName, err)
 		writeError(w, http.StatusBadGateway, "speech recognition failed")
 		return
 	}
-	if s.Parser == nil && text != "" {
+	if p, _ := s.parser(r.Context()); p == nil && text != "" {
 		// Speech works but nothing can read the phrase yet: show the operator what
 		// was heard and let them fill the form by hand.
 		writeJSON(w, http.StatusOK, DraftResponse{Transcript: text, SKUs: []store.SKU{}})
@@ -380,7 +418,8 @@ func (s *Server) draft(w http.ResponseWriter, r *http.Request, text string) {
 		writeError(w, http.StatusUnprocessableEntity, "nothing was said")
 		return
 	}
-	if s.Parser == nil {
+	parser, llmName := s.parser(r.Context())
+	if parser == nil {
 		writeError(w, http.StatusServiceUnavailable, "phrase parsing is not configured on the server")
 		return
 	}
@@ -391,10 +430,10 @@ func (s *Server) draft(w http.ResponseWriter, r *http.Request, text string) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	d, err := s.Parser.Parse(ctx, catalog, text)
+	d, err := parser.Parse(ctx, catalog, text)
 	if err != nil {
 		slog.Error("parsing failed", "err", err)
-		s.recordFailure(r, "llm_error", s.LLMName, err)
+		s.recordFailure(r, "llm_error", llmName, err)
 		writeError(w, http.StatusBadGateway, "could not understand the phrase")
 		return
 	}

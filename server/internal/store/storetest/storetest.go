@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 )
 
 var urls sync.Map // *store.Store -> database URL
+
+var dbSeq atomic.Uint64
 
 // Exec runs sql on the database of a store made by New, for tests that need the
 // database to misbehave (a trigger that fails, for example).
@@ -50,7 +53,7 @@ func New(t *testing.T) *store.Store {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	name := fmt.Sprintf("qoimeks_test_%d", time.Now().UnixNano())
+	name := fmt.Sprintf("qoimeks_test_%d_%d_%d", os.Getpid(), time.Now().UnixNano(), dbSeq.Add(1))
 	if _, err := admin.Exec(ctx, "create database "+name); err != nil {
 		t.Fatalf("create database: %v", err)
 	}
