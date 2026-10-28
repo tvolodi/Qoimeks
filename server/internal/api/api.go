@@ -40,13 +40,20 @@ type Server struct {
 	// ProviderKeys are the configured speech and language-model keys; feedback is
 	// scrubbed of them before it is stored.
 	ProviderKeys []string
+	// LLMName and STTName label the configured providers in recorded failures.
+	LLMName string
+	STTName string
 
 	now     func() time.Time // tests replace the clock of the admin rate limiter
 	mu      sync.Mutex
 	tenants map[string]*store.Store // schema -> store, opened on first use
+
+	failMu   sync.Mutex
+	failSeen map[failKey]time.Time // last recorded failure per key, see recordFailure
 }
 
 type storeKey struct{}
+type schemaKey struct{}
 
 // store is the ledger a request works on: its tenant's, or the default one.
 func (s *Server) store(r *http.Request) *store.Store {
@@ -133,7 +140,8 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 					storeError(w, r, err)
 					return
 				}
-				r = r.WithContext(context.WithValue(r.Context(), storeKey{}, ts))
+				ctx := context.WithValue(r.Context(), storeKey{}, ts)
+				r = r.WithContext(context.WithValue(ctx, schemaKey{}, t.SchemaName))
 				next.ServeHTTP(w, r)
 				return
 			case !errors.Is(err, store.ErrNotFound):
@@ -153,7 +161,7 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-App-Version, X-Device, X-Operator")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -235,6 +243,9 @@ func (s *Server) postMovement(w http.ResponseWriter, r *http.Request) {
 	}
 	m, created, err := s.store(r).Post(r.Context(), in)
 	if err != nil {
+		if isServerFailure(err) {
+			s.recordFailure(r, "post_error", "store", err)
+		}
 		storeError(w, r, err)
 		return
 	}
@@ -315,6 +326,7 @@ func (s *Server) parseVoice(w http.ResponseWriter, r *http.Request) {
 	text, err := s.Transcriber.Transcribe(ctx, audio, header.Filename, r.FormValue("lang"))
 	if err != nil {
 		slog.Error("transcription failed", "err", err)
+		s.recordFailure(r, "speech_error", s.STTName, err)
 		writeError(w, http.StatusBadGateway, "speech recognition failed")
 		return
 	}
@@ -346,6 +358,7 @@ func (s *Server) draft(w http.ResponseWriter, r *http.Request, text string) {
 	d, err := s.Parser.Parse(ctx, catalog, text)
 	if err != nil {
 		slog.Error("parsing failed", "err", err)
+		s.recordFailure(r, "llm_error", s.LLMName, err)
 		writeError(w, http.StatusBadGateway, "could not understand the phrase")
 		return
 	}

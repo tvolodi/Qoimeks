@@ -75,6 +75,15 @@ the database. Before storing, every string in the request has the server `ACCESS
 code the request was sent with (a tenant's code), every configured provider key of 8+ characters,
 `Bearer <token>` and `sk-…` keys replaced with `[redacted]`.
 
+The server also records failures nobody reported, in the caller's own schema: a failed speech
+call in `/api/voice` (`speech_error`), a failed language-model call in `/api/parse` and
+`/api/voice` (`llm_error`) and a server-side (5xx) failure of `POST /api/movements`
+(`post_error`); validation errors (4xx) are not recorded. The row has the provider name, the
+error class and message (redacted as above) and, when the app sent them, `X-App-Version`,
+`X-Device` and `X-Operator` (percent-encoded; stored in `app_version`, `device`, `operator`).
+At most one row per schema, kind and provider is appended per minute (in-memory window; rows
+are never updated), so a broken provider key shows up as one row a minute, not one per call.
+
 `GET /api/feedback` (bearer access code) lists the stored items newest first as JSON, up to
 `?limit=` rows (default 200, at most 1000); `GET /api/feedback/export.md` returns the newest
 1000 as a Markdown file with text, kind, version, Android, device, operator, screen, time and

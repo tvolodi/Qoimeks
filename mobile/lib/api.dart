@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'feedback.dart' show DeviceInfoReader;
+
 class Sku {
   const Sku({
     required this.id,
@@ -154,13 +156,34 @@ class ApiClient {
     http.Client? client,
     this.onSuccess,
     this.onError,
+    this.operator = '',
+    DeviceInfoReader? deviceInfo,
   })  : _base = baseUrl.trim().replaceAll(RegExp(r'/+$'), ''),
         _auth = accessCode.isEmpty ? const {} : {'Authorization': 'Bearer $accessCode'},
-        _http = client ?? http.Client();
+        _http = client ?? http.Client(),
+        _deviceInfo = deviceInfo;
 
   final String _base;
   final Map<String, String> _auth;
   final http.Client _http;
+  final DeviceInfoReader? _deviceInfo;
+
+  /// The operator's name, sent as X-Operator so the server can say who met an error.
+  final String operator;
+  Future<Map<String, String>>? _headers;
+
+  /// [deviceInfo] (the app passes readDeviceInfo) fills the app version and device.
+  /// Authorization plus X-App-Version, X-Device and X-Operator (the last three only when
+  /// known). Values are percent-encoded because HTTP headers cannot carry Cyrillic.
+  Future<Map<String, String>> _requestHeaders() => _headers ??= () async {
+        final info = await _deviceInfo?.call();
+        return {
+          ..._auth,
+          if (info != null && info.appVersion.isNotEmpty) 'X-App-Version': Uri.encodeComponent(info.appVersion),
+          if (info != null && info.device.isNotEmpty) 'X-Device': Uri.encodeComponent(info.device),
+          if (operator.trim().isNotEmpty) 'X-Operator': Uri.encodeComponent(operator.trim()),
+        };
+      }();
 
   /// Called after a call succeeded / failed (not for feedback itself).
   final void Function()? onSuccess;
@@ -191,12 +214,12 @@ class ApiClient {
   }
 
   Future<dynamic> _get(String path) =>
-      _send(() => _http.get(Uri.parse('$_base$path'), headers: _auth), path: path);
+      _send(() async => _http.get(Uri.parse('$_base$path'), headers: await _requestHeaders()), path: path);
 
   Future<dynamic> _post(String path, Map<String, dynamic> body, {bool observe = true}) => _send(
-        () => _http.post(
+        () async => _http.post(
           Uri.parse('$_base$path'),
-          headers: {'Content-Type': 'application/json', ..._auth},
+          headers: {'Content-Type': 'application/json', ...await _requestHeaders()},
           body: jsonEncode(body),
         ),
         path: path,
@@ -260,7 +283,7 @@ class ApiClient {
   Future<Draft> voice(Uint8List audio, String filename, String lang) async {
     final j = await _send(() async {
       final req = http.MultipartRequest('POST', Uri.parse('$_base/api/voice'))
-        ..headers.addAll(_auth)
+        ..headers.addAll(await _requestHeaders())
         ..fields['lang'] = lang
         ..files.add(http.MultipartFile.fromBytes('audio', audio, filename: filename));
       return http.Response.fromStream(await _http.send(req));
