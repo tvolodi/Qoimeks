@@ -281,6 +281,20 @@ saved code is replaced by `[redacted]`. When the server cannot be reached the re
 on the phone, the form says so, and it is sent on the next app start or after the next
 successful API call, once.
 
+### Offline queue for hand-entered operations
+
+When the server cannot be reached (network error, 500/502/503/504) while an operation is
+posted from the form, the app keeps it on the phone (shared preferences, up to 200 items, with
+the operation id already generated and the server address and access code it was made for) and
+shows «Ожидают отправки: N / Жіберуді күтуде: N». The queue is sent oldest first on app start,
+on resume and after any successful API call; the id makes a re-send after a lost response post
+once. While items are waiting, a new operation goes behind them, so a stock count cannot
+overtake an older receipt. An operation the server refuses (400/409/422…) stays in the queue
+list with the reason, does not block the rest, and can be retried or deleted; items made for
+another server or access code are never sent and can only be deleted. A wrong access code (401)
+pauses the queue. Balances shown when the server is unreachable are the last ones fetched and
+are marked as possibly old. Voice recordings are not queued yet.
+
 ## Для операторов
 
 Приложение Qoimeks записывает приход, расход, перемещение и пересчёт товара на складе.

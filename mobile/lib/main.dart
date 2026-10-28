@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'api.dart';
 import 'design/theme.dart';
 import 'feedback.dart';
+import 'offline_queue.dart';
 import 'operation_screen.dart';
 import 'settings.dart';
 import 'settings_screen.dart';
@@ -20,17 +21,31 @@ Future<void> main() async {
     settings: settings,
     api: () => ApiClient(settings.serverUrl, accessCode: settings.accessCode, operator: settings.operator, deviceInfo: readDeviceInfo),
   );
-  runApp(QoimeksApp(settings: settings, updates: updates, feedback: feedback));
+  final queue = OfflineQueue();
+  await queue.load();
+  runApp(QoimeksApp(settings: settings, updates: updates, feedback: feedback, queue: queue));
   unawaited(updates.checkOnStart());
   unawaited(feedback.retryPending());
+  unawaited(flushQueue(queue, settings));
+}
+
+/// Sends the queued operations with a client of its own, so its successes do not start another flush.
+Future<void> flushQueue(OfflineQueue queue, AppSettings settings) {
+  if (!settings.isComplete) return Future.value();
+  return queue.flush(
+    ApiClient(settings.serverUrl, accessCode: settings.accessCode, operator: settings.operator, deviceInfo: readDeviceInfo),
+    serverUrl: settings.serverUrl,
+    accessCode: settings.accessCode,
+  );
 }
 
 class QoimeksApp extends StatelessWidget {
-  const QoimeksApp({super.key, required this.settings, this.updates, this.feedback});
+  const QoimeksApp({super.key, required this.settings, this.updates, this.feedback, this.queue});
 
   final AppSettings settings;
   final UpdateChecker? updates;
   final FeedbackService? feedback;
+  final OfflineQueue? queue;
 
   @override
   Widget build(BuildContext context) {
@@ -53,12 +68,17 @@ class QoimeksApp extends StatelessWidget {
                   accessCode: settings.accessCode,
                   operator: settings.operator,
                   deviceInfo: readDeviceInfo,
-                  onSuccess: feedback?.retryPending,
+                  // Any successful call shows the server is reachable: retry what is waiting.
+                  onSuccess: () {
+                    feedback?.retryPending();
+                    if (queue != null) unawaited(flushQueue(queue!, settings));
+                  },
                   onError: feedback?.onApiError,
                 ),
                 voice: MicrophoneCapture(),
                 updates: updates,
                 feedback: feedback,
+                offlineQueue: queue,
               )
             : SettingsScreen(settings: settings, firstRun: true, updates: updates),
       ),
