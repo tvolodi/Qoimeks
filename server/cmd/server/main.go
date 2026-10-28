@@ -71,6 +71,7 @@ func main() {
 	}
 	resolver := &providers.Resolver{Store: st, Key: settingsKey}
 	srv.Providers = resolver
+	srv.Settings = &providers.Service{Store: st, Key: settingsKey}
 	cfg, source, err := resolver.LLMConfig(ctx)
 	switch {
 	case errors.Is(err, providers.ErrNotConfigured):

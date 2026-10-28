@@ -80,6 +80,8 @@ type Server struct {
 	// Providers, when set, supplies the parser and transcriber per request (stored
 	// settings first, environment second). Parser and Transcriber above win when set.
 	Providers ProviderResolver
+	// Settings saves and shows the stored provider settings (web admin). Nil turns that API off.
+	Settings SettingsService
 
 	now     func() time.Time // tests replace the clock of the admin rate limiter
 	mu      sync.Mutex
@@ -144,6 +146,7 @@ func (s *Server) Handler() http.Handler {
 	s.webRoutes(mux)
 	s.importRoutes(mux)
 	s.adminRoutes(mux)
+	s.settingsRoutes(mux)
 	return cors(s.requireToken(mux))
 }
 

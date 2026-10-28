@@ -176,6 +176,7 @@
       <a href="#excel">Импорт и экспорт</a>
       <a href="#history">История загрузок</a>
       <a href="#feedback">Отзывы</a>
+      <a href="#settings">Настройки</a>
     </nav>
     <div class="access">
       <button id="accessButton" class="secondary" type="button" aria-haspopup="true" aria-expanded="false">Войти</button>
@@ -332,6 +333,15 @@
       <p class="count" id="feedbackCount"></p>
     </section>
     <section id="feedbackList"></section>
+  </div>
+
+  <div class="page" id="page-settings" hidden>
+    <section>
+      <h1>Настройки</h1>
+      <p class="hint">Языковая модель и распознавание речи: сервис, модель и ключ. Ключ хранится на сервере в зашифрованном виде, здесь виден только в закрытой форме и в приложение не передаётся. Раздел открывается только общим кодом доступа. Кнопка «Проверить» делает один недорогой запрос с сохранёнными настройками (или с переменными окружения, если ничего не сохранено).</p>
+      <div id="settingsMessage" class="note"></div>
+    </section>
+    <section id="settingsForms"></section>
   </div>
 </main>
 
@@ -688,7 +698,7 @@ async function load() {
 }
 
 // Pages are parts of this one document, chosen by the address after "#".
-const pages = ['balances', 'excel', 'history', 'feedback'];
+const pages = ['balances', 'excel', 'history', 'feedback', 'settings'];
 
 function showPage() {
   const name = pages.includes(location.hash.slice(1)) ? location.hash.slice(1) : pages[0];
@@ -697,6 +707,7 @@ function showPage() {
   $('signedOut').hidden = access.signedIn;
   if (access.signedIn && name === 'history') loadHistory();
   if (access.signedIn && name === 'feedback') loadFeedback();
+  if (access.signedIn && name === 'settings') loadSettings();
 }
 
 function showAccess(open) {
@@ -979,6 +990,79 @@ async function loadFeedback() {
     sayFeedback(e.message, 'error');
   }
   $('feedbackReload').disabled = false;
+}
+
+// --- settings: provider choice, key and test (the key is only ever sent, never shown)
+const sluSay = (text, kind) => say(text, kind, 'settingsMessage');
+const settingsKinds = [['llm', 'Языковая модель'], ['stt', 'Распознавание речи']];
+
+function renderSettings(data) {
+  const box = $('settingsForms');
+  box.textContent = '';
+  for (const [kind, title] of settingsKinds) {
+    const cur = (data.settings || []).find(s => s.kind === kind);
+    const names = kind === 'llm' ? data.llm_providers : data.stt_providers;
+    const form = el('form');
+    form.append(el('h2', title));
+    const field = (label, control) => {
+      const wrap = el('div', undefined, 'field');
+      wrap.append(el('label', label), control);
+      form.append(wrap);
+      return control;
+    };
+    const provider = field('Сервис', el('select'));
+    for (const n of names) provider.append(new Option(n, n));
+    if (cur) provider.value = cur.provider;
+    const model = field('Модель (пусто — по умолчанию)', el('input'));
+    model.type = 'text';
+    model.value = cur ? cur.model : '';
+    const key = field(cur && cur.has_key ? 'Ключ API: сохранён ' + cur.key_mask + '. Оставьте пустым, чтобы не менять' : 'Ключ API', el('input'));
+    key.type = 'password';
+    key.autocomplete = 'off';
+    const actions = el('div', undefined, 'actions');
+    const save = el('button', 'Сохранить');
+    save.type = 'submit';
+    const test = el('button', 'Проверить', 'secondary');
+    test.type = 'button';
+    actions.append(save, test);
+    form.append(actions);
+    form.onsubmit = async ev => {
+      ev.preventDefault();
+      save.disabled = true;
+      try {
+        const body = { kind, provider: provider.value, model: model.value, api_key: key.value, keep_key: true };
+        renderSettings(await callJSON('/api/settings/providers', { method: 'PUT', body: JSON.stringify(body) }));
+        sluSay('Сохранено.', 'ok');
+      } catch (e) {
+        sluSay(e.message, 'error');
+        save.disabled = false;
+      }
+    };
+    test.onclick = async () => {
+      test.disabled = true;
+      sluSay('Проверяю…', 'ok');
+      try {
+        const r = await callJSON('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ kind }) });
+        sluSay(r.ok ? title + ': работает.' : title + ': ошибка. ' + r.message, r.ok ? 'ok' : 'error');
+      } catch (e) {
+        sluSay(e.message, 'error');
+      }
+      test.disabled = false;
+    };
+    box.append(form);
+  }
+}
+
+async function loadSettings() {
+  if (!access.signedIn) return;
+  sluSay('Загружаю…', 'ok');
+  try {
+    renderSettings(await callJSON('/api/settings/providers'));
+    sluSay('');
+  } catch (e) {
+    $('settingsForms').textContent = '';
+    sluSay(e.message, 'error');
+  }
 }
 
 $('feedbackReload').onclick = loadFeedback;
