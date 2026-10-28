@@ -193,3 +193,47 @@ func TestTenantFailureWritesIntoTenantSchema(t *testing.T) {
 		t.Fatalf("default rows: %+v", rows)
 	}
 }
+
+// errorSource posts and returns the "source" field of the JSON error body.
+func errorSource(t *testing.T, url, contentType string, body []byte, want int) string {
+	t.Helper()
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer shared")
+	req.Header.Set("Content-Type", contentType)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != want {
+		t.Fatalf("%s: status %d, want %d", url, resp.StatusCode, want)
+	}
+	var out struct{ Error, Source string }
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Error == "" {
+		t.Errorf("%s: no error text", url)
+	}
+	return out.Source
+}
+
+func TestProviderErrorBodiesNameTheFailedPart(t *testing.T) {
+	srv, url, _ := failureSetup(t)
+	audio, ct := audioBody()
+	if got := errorSource(t, url+"/api/voice", ct, audio, 502); got != "speech" {
+		t.Errorf("voice failure source %q", got)
+	}
+	if got := errorSource(t, url+"/api/parse", "application/json", []byte(`{"text":"приход гайки"}`), 502); got != "llm" {
+		t.Errorf("parse failure source %q", got)
+	}
+	// Not configured counts as unavailable too.
+	srv.Parser = nil
+	if got := errorSource(t, url+"/api/parse", "application/json", []byte(`{"text":"приход гайки"}`), 503); got != "llm" {
+		t.Errorf("parse unconfigured source %q", got)
+	}
+	srv.Transcriber = nil
+	if got := errorSource(t, url+"/api/voice", ct, audio, 503); got != "speech" {
+		t.Errorf("voice unconfigured source %q", got)
+	}
+}
