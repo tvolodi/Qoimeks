@@ -196,12 +196,12 @@ func TestSettingsUIOffByDefault(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	page, _ := io.ReadAll(resp.Body)
-	for _, bad := range []string{`page-settings`, `href="#settings"`, "/api/settings", "settings:begin", "settings:end", "loadSettings", "'settings'", "<h1>Настройки</h1>", "«Настройки»"} {
+	for _, bad := range []string{`page-settings`, `href="#settings"`, "/api/settings", "settings:begin", "settings:end", "loadSettings", "'settings'", "<h1>Настройки</h1>"} {
 		if bytes.Contains(page, []byte(bad)) {
 			t.Errorf("served page contains %q", bad)
 		}
 	}
-	for _, want := range []string{`id="page-feedback"`, `href="#feedback"`, "const pages = ['balances', 'excel', 'history', 'feedback'];"} {
+	for _, want := range []string{`id="page-feedback"`, `href="#feedback"`, "const pages = ['balances', 'excel', 'history', 'feedback'];", "В приложении на телефоне нажмите значок шестерёнки"} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Errorf("served page lost %q", want)
 		}
