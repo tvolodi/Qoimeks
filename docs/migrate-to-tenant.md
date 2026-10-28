@@ -33,6 +33,18 @@ DATABASE_URL=... go run ./cmd/migrate-tenant --tenant-id <tenant uuid> --dry-run
 DATABASE_URL=... go run ./cmd/migrate-tenant --tenant-id <tenant uuid>
 ```
 
+In production, use the tool shipped in the server image
+(`/usr/local/bin/qoimeks-migrate-tenant`); no Go toolchain is needed on the host. The
+running container already has `DATABASE_URL`, and the tool never prints it:
+
+```
+docker exec <container> qoimeks-migrate-tenant --tenant-id <tenant uuid> --dry-run
+docker exec <container> qoimeks-migrate-tenant --tenant-id <tenant uuid>
+```
+
+Without a running container, `docker run --rm -e DATABASE_URL=... --entrypoint
+qoimeks-migrate-tenant <image> --tenant-id <tenant uuid> --dry-run` does the same.
+
 Flags: `--tenant-id` (required), `--source-schema` (default `public`), `--dry-run`
 (does everything, rolls back, prints the report; sequences are not touched).
 
