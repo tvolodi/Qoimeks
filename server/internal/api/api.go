@@ -87,6 +87,10 @@ type Server struct {
 	Providers ProviderResolver
 	// Settings saves and shows the stored provider settings (web admin). Nil turns that API off.
 	Settings SettingsService
+	// SettingsUI turns the settings page and its /api/settings routes on (SETTINGS_UI=1).
+	// Off, the page is cut from the served HTML and the routes do not exist (404). Stored
+	// settings are still read by Providers; this only hides editing.
+	SettingsUI bool
 
 	now     func() time.Time // tests replace the clock of the admin rate limiter
 	mu      sync.Mutex
@@ -151,7 +155,9 @@ func (s *Server) Handler() http.Handler {
 	s.webRoutes(mux)
 	s.importRoutes(mux)
 	s.adminRoutes(mux)
-	s.settingsRoutes(mux)
+	if s.SettingsUI {
+		s.settingsRoutes(mux)
+	}
 	return cors(s.requireToken(mux))
 }
 

@@ -176,8 +176,8 @@
       <a href="#excel">Импорт и экспорт</a>
       <a href="#history">История загрузок</a>
       <a href="#feedback">Отзывы</a>
-      <a href="#settings">Настройки</a>
-    </nav>
+<!--settings:begin-->      <a href="#settings">Настройки</a>
+<!--settings:end-->    </nav>
     <div class="access">
       <button id="accessButton" class="secondary" type="button" aria-haspopup="true" aria-expanded="false">Войти</button>
       <form id="accessPanel" hidden>
@@ -335,6 +335,7 @@
     <section id="feedbackList"></section>
   </div>
 
+<!--settings:begin-->
   <div class="page" id="page-settings" hidden>
     <section>
       <h1>Настройки</h1>
@@ -343,6 +344,7 @@
     </section>
     <section id="settingsForms"></section>
   </div>
+<!--settings:end-->
 </main>
 
 <script>
@@ -593,7 +595,7 @@ async function call(path, options) {
     try { body = await resp.json(); } catch (e) { /* not JSON */ }
     const own = body && body.error;
     // the settings routes explain themselves; the generic map is for the import routes
-    if (path.startsWith('/api/settings/') && own) throw new Error(own);
+    /*settings:begin*/ if (path.startsWith('/api/settings/') && own) throw new Error(own); /*settings:end*/
     throw new Error(messages[resp.status] || own || ('Ошибка ' + resp.status));
   }
   return resp;
@@ -701,7 +703,7 @@ async function load() {
 }
 
 // Pages are parts of this one document, chosen by the address after "#".
-const pages = ['balances', 'excel', 'history', 'feedback', 'settings'];
+const pages = ['balances', 'excel', 'history', 'feedback'/*settings:begin*/, 'settings'/*settings:end*/];
 
 function showPage() {
   const name = pages.includes(location.hash.slice(1)) ? location.hash.slice(1) : pages[0];
@@ -710,7 +712,9 @@ function showPage() {
   $('signedOut').hidden = access.signedIn;
   if (access.signedIn && name === 'history') loadHistory();
   if (access.signedIn && name === 'feedback') loadFeedback();
+  /*settings:begin*/
   if (access.signedIn && name === 'settings') loadSettings();
+  /*settings:end*/
 }
 
 function showAccess(open) {
@@ -995,6 +999,7 @@ async function loadFeedback() {
   $('feedbackReload').disabled = false;
 }
 
+/*settings:begin*/
 // --- settings: provider choice, key and test (the key is only ever sent, never shown)
 const sluSay = (text, kind) => say(text, kind, 'settingsMessage');
 const settingsKinds = [['llm', 'Языковая модель'], ['stt', 'Распознавание речи']];
@@ -1072,6 +1077,7 @@ async function loadSettings() {
     sluSay(e.message, 'error');
   }
 }
+/*settings:end*/
 
 $('feedbackReload').onclick = loadFeedback;
 $('feedbackExport').onclick = async () => {
