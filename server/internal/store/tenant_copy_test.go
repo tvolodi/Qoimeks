@@ -118,6 +118,58 @@ func TestCopyToTenantDryRunLeavesTargetEmpty(t *testing.T) {
 	}
 }
 
+// analyzedTables counts the ledger tables of a schema that have statistics
+// (reltuples is -1 until the first ANALYZE or VACUUM).
+func analyzedTables(t *testing.T, st *store.Store, schema string) int {
+	t.Helper()
+	return count(t, st, `select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+		where n.nspname = '`+schema+`' and c.relkind = 'r' and c.reltuples >= 0
+		and c.relname in ('locations','skus','imports','movements','balances','feedback')`)
+}
+
+func TestCopyToTenantAnalyzesAfterRealRun(t *testing.T) {
+	st := storetest.New(t)
+	ledgerFixture(t, st)
+	tn, _ := newTenant(t, st)
+	ctx := context.Background()
+
+	if n := analyzedTables(t, st, tn.SchemaName); n != 0 {
+		t.Fatalf("%d tenant tables analyzed before the copy", n)
+	}
+	rep, err := st.CopyToTenant(ctx, store.CopyOptions{TenantID: tn.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Analyzed) != 6 {
+		t.Fatalf("analyze report: %+v", rep.Analyzed)
+	}
+	for _, a := range rep.Analyzed {
+		if a.Err != nil {
+			t.Errorf("analyze %s: %v", a.Name, a.Err)
+		}
+	}
+	if n := analyzedTables(t, st, tn.SchemaName); n != 6 {
+		t.Errorf("%d of 6 tenant tables have statistics after the copy", n)
+	}
+}
+
+func TestCopyToTenantDryRunDoesNotAnalyze(t *testing.T) {
+	st := storetest.New(t)
+	ledgerFixture(t, st)
+	tn, _ := newTenant(t, st)
+
+	rep, err := st.CopyToTenant(context.Background(), store.CopyOptions{TenantID: tn.ID, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Analyzed) != 0 {
+		t.Errorf("dry run reports analyze: %+v", rep.Analyzed)
+	}
+	if n := analyzedTables(t, st, tn.SchemaName); n != 0 {
+		t.Errorf("%d tenant tables analyzed by a dry run", n)
+	}
+}
+
 func TestCopyToTenantRefusals(t *testing.T) {
 	st := storetest.New(t)
 	ledgerFixture(t, st)
