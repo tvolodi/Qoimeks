@@ -58,6 +58,13 @@ func (s *Server) newRedactor(r *http.Request) redactor {
 			exact = append(exact, k)
 		}
 	}
+	if s.Providers != nil {
+		for _, k := range s.Providers.Secrets(r.Context()) {
+			if len(k) >= minSecretLen {
+				exact = append(exact, k)
+			}
+		}
+	}
 	// Longest first, so a secret that contains a shorter one is removed whole.
 	sort.Slice(exact, func(i, j int) bool { return len(exact[i]) > len(exact[j]) })
 	return redactor{exact: exact}
