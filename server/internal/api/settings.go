@@ -92,7 +92,7 @@ func (s *Server) putProviderSettings(w http.ResponseWriter, r *http.Request) {
 		Kind: in.Kind, Provider: in.Provider, Model: in.Model, APIKey: in.APIKey, KeepKey: in.KeepKey,
 	})
 	if errors.Is(err, providers.ErrNoSettingsKey) {
-		writeError(w, http.StatusConflict, "на сервере не задан SETTINGS_KEY: ключ нельзя сохранить")
+		writeError(w, http.StatusConflict, "на сервере не задан SETTINGS_KEY: ключ нельзя сохранить. Попросите администратора сервера задать SETTINGS_KEY")
 		return
 	}
 	if err != nil {

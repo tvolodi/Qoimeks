@@ -1004,19 +1004,22 @@ function renderSettings(data) {
     const names = kind === 'llm' ? data.llm_providers : data.stt_providers;
     const form = el('form');
     form.append(el('h2', title));
-    const field = (label, control) => {
+    const field = (id, label, control) => {
       const wrap = el('div', undefined, 'field');
-      wrap.append(el('label', label), control);
+      const lab = el('label', label);
+      control.id = 'settings-' + kind + '-' + id;
+      lab.htmlFor = control.id;
+      wrap.append(lab, control);
       form.append(wrap);
       return control;
     };
-    const provider = field('Сервис', el('select'));
+    const provider = field('provider', 'Сервис', el('select'));
     for (const n of names) provider.append(new Option(n, n));
     if (cur) provider.value = cur.provider;
-    const model = field('Модель (пусто — по умолчанию)', el('input'));
+    const model = field('model', 'Модель (пусто — по умолчанию)', el('input'));
     model.type = 'text';
     model.value = cur ? cur.model : '';
-    const key = field(cur && cur.has_key ? 'Ключ API: сохранён ' + cur.key_mask + '. Оставьте пустым, чтобы не менять' : 'Ключ API', el('input'));
+    const key = field('key', cur && cur.has_key ? 'Ключ API: сохранён ' + cur.key_mask + '. Оставьте пустым, чтобы не менять' : 'Ключ API', el('input'));
     key.type = 'password';
     key.autocomplete = 'off';
     const actions = el('div', undefined, 'actions');
@@ -1033,6 +1036,8 @@ function renderSettings(data) {
         const body = { kind, provider: provider.value, model: model.value, api_key: key.value, keep_key: true };
         renderSettings(await callJSON('/api/settings/providers', { method: 'PUT', body: JSON.stringify(body) }));
         sluSay('Сохранено.', 'ok');
+        const again = $('settings-' + kind + '-provider');
+        if (again) again.form.querySelector('button[type=submit]').focus();
       } catch (e) {
         sluSay(e.message, 'error');
         save.disabled = false;
@@ -1043,7 +1048,7 @@ function renderSettings(data) {
       sluSay('Проверяю…', 'ok');
       try {
         const r = await callJSON('/api/settings/providers/test', { method: 'POST', body: JSON.stringify({ kind }) });
-        sluSay(r.ok ? title + ': работает.' : title + ': ошибка. ' + r.message, r.ok ? 'ok' : 'error');
+        sluSay(r.ok ? title + ': работает.' : title + ': ошибка. ' + r.message + ' Проверьте ключ и модель, нажмите «Сохранить» и проверьте снова.', r.ok ? 'ok' : 'error');
       } catch (e) {
         sluSay(e.message, 'error');
       }
