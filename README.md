@@ -37,8 +37,18 @@ On first launch the app asks for the operator's name and the server address
 | `ELEVENLABS_API_KEY` | — | speech-to-text with ElevenLabs Scribe (`elevenlab_api_key` is accepted too) |
 | `STT_API_KEY`, `STT_BASE_URL` | — | instead of ElevenLabs: any service with an OpenAI-style `/audio/transcriptions` |
 | `STT_MODEL` | `scribe_v2` / `gpt-4o-transcribe` | speech model |
+| `SETTINGS_KEY` | — | base64 of 32 random bytes (`openssl rand -base64 32`); encrypts the provider API keys stored on the server. Without it stored keys are not used and cannot be saved |
 
 Settings can also be put in a `.env` file in the repository root or in `server/`.
+
+Provider settings stored in the database (language model and speech: provider, model, API key) win
+over the variables above; the environment variables (`LLM_*`, the `*_API_KEY` ones, `STT_*`,
+`ELEVENLABS_API_KEY`) are the fallback when nothing is stored. The fallback also applies when a
+stored key cannot be decrypted because `SETTINGS_KEY` is missing or was changed: the server then
+uses the environment and logs a warning without any key material. Changes apply to the next
+request, no restart. Stored keys are server-wide (not per tenant), shown only masked and never
+sent to the app. Keep `SETTINGS_KEY` safe: if it is lost, stored keys cannot be recovered and
+must be entered again.
 
 ### Language model
 
