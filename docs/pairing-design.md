@@ -39,8 +39,9 @@ per-device key tied to the tenant; keys are revocable per device. The shared ten
 - Registry: `tenants(tenant_id, name, language, tier, owner_email, schema_name, access_hash bytea unique, status,
   created_at, updated_at, expires_at)` in the default schema only (`migrate.go` `publicOnly`); latest migration is
   `009_provider_settings.sql`. (`codes-design.md` says 007 for its migration; numbers are taken in order of merging.)
-- No code reads `X-Forwarded-For`/`CF-Connecting-IP`; `r.RemoteAddr` behind the host's nginx is the loopback
-  address. A per-IP limit therefore needs a small trusted-proxy rule (section 4).
+- No code reads `X-Forwarded-For`/`CF-Connecting-IP`/`X-Real-IP`; `r.RemoteAddr` behind the host's nginx is the
+  proxy's address (the Docker bridge gateway, not loopback). A per-IP limit therefore needs a small trusted-proxy
+  rule (section 4).
 - Mobile: `settings.dart` keeps `serverUrl`, `accessCode`, `operator`, `lang` in `SharedPreferences` (plain, not secure
   storage). `api.dart` `ApiClient` sends `Authorization: Bearer <accessCode>` plus `X-App-Version`, `X-Device`
   (model label), `X-Operator`. `setup_qr.dart` `parseSetupQr` accepts only `qoimeks://setup?url=<enc>[&code=<enc>]`,
@@ -205,10 +206,23 @@ entry would still use the bare code (open question 5).
 100 / 6.6 × 10^11 ≈ 1.5 × 10^-10. At the global cap of 300 failures per 10 minutes (43 200 guesses a day) the chance of
 **any** hit in a day is about 6.5 × 10^-6, and the codes are dead after 10 minutes anyway.
 
-**Client IP.** VERIFIED: nothing reads forwarding headers today, and `RemoteAddr` is the proxy. PROPOSED: a small
-helper takes `CF-Connecting-IP` (falling back to the first `X-Forwarded-For` entry) **only when `RemoteAddr` is a
-loopback address**; otherwise `RemoteAddr` is used. This needs the host's nginx to pass the header through (it already
-sits behind Cloudflare) — to confirm with the ai-dala-infra owner (open question 4).
+**Client IP.** VERIFIED in this repository: nothing reads forwarding headers today, so `RemoteAddr` is the proxy.
+VERIFIED by infra (portfolio-manager, 2026-10-28):
+- nginx sets `X-Real-IP` to `$remote_addr` and always overwrites it, so a client cannot spoof it. With `real_ip`
+  configured for all Cloudflare ranges, `$remote_addr` is the true visitor IP.
+- `X-Forwarded-For` holds the client's own value with the peer appended: only the **last** entry is trustworthy.
+- `CF-Connecting-IP` is **not** cleared by the qoimeks vhosts: never trust it.
+- The app container's direct peer is **not** `127.0.0.1`. nginx reaches the container through Docker's port mapping,
+  so the peer is the Docker bridge gateway of the container's compose network (roughly `192.168.208.x` in prod,
+  `10.203.119.x` in QA; not measured). A rule "trust headers only from loopback" would therefore never trust them.
+- Ports: the container is published on `127.0.0.1:3113` (prod) and `127.0.0.1:3100` (QA); ufw is default-deny; each
+  container is alone on its compose network with its own database. So nothing but the host's nginx reaches the port.
+
+PROPOSED rule: a small helper returns the client IP from `X-Real-IP` **when the direct peer (`RemoteAddr`) is inside a
+trusted range**, configured by the env variable `TRUSTED_PROXY_CIDRS` (comma-separated CIDRs; default: the compose
+network gateway range plus loopback); otherwise it returns `RemoteAddr`. It ignores `CF-Connecting-IP` and the
+leftmost `X-Forwarded-For` entries. A missing or unparsable `X-Real-IP` also falls back to `RemoteAddr`. Infra can
+measure the exact peer address when the build starts, to set the default. (Open question 4 is closed.)
 
 **At rest.** Pairing codes and device keys are stored as `sha256` hashes, exactly as `tenants.access_hash` (VERIFIED
 `hashCode`). The device key has 256 bits of entropy, so an unsalted hash is sound. The pairing code has only 39 bits, so
@@ -341,7 +355,7 @@ the approve call.
 |---|---|---|
 | 1 | Migration (two tables, `publicOnly`) + store functions: create/cancel pairing, exchange in one transaction, device create/list/revoke/touch, tests with the storetest harness | medium |
 | 2 | Code generator (alphabet, rejection sampling, normalisation) + key generator | small |
-| 3 | Keyed rate limiter (per IP, failure windows, global cap) + trusted-proxy client-IP helper, tests with the injected clock | small–medium |
+| 3 | Keyed rate limiter (per IP, failure windows, global cap) + trusted-proxy client-IP helper (`X-Real-IP` when the peer is in `TRUSTED_PROXY_CIDRS`; CIDR parsing, a table test of peers and headers), tests with the injected clock | small–medium (the trusted-range setting adds a small helper and one test, no change to the total) |
 | 4 | Admin handlers (create, cancel, list, revoke) with errors and tests, incl. cross-tenant 404 | medium |
 | 5 | Public `POST /pair/v1/exchange` + limits + tests (single use race, expiry by clock, uniform error, suspended tenant) | medium |
 | 6 | `requireToken` device branch (`qdk_`, revoked reason, throttled `last_seen_at`) + tests that old token/tenant code flows are unchanged | small–medium |
@@ -363,8 +377,9 @@ one on the site; none is large, and nothing touches the ledger.**
 2. **Device limits**: 5 pending codes and 50 devices per tenant, 10-minute default lifetime — right for the plans?
 3. **Who may revoke**: only through the front door (admin API), or also from a device in the app/web page (tenant-scoped
    `GET /api/devices`, which needs a "who is allowed" decision since there are no accounts)?
-4. **Client IP**: confirm with the ai-dala-infra owner that nginx passes `CF-Connecting-IP`/`X-Forwarded-For` to the
-   container, and that no other client can reach port 3113 directly.
+4. ~~**Client IP**~~ **Closed** (infra facts, 2026-10-28; section 4): the client IP is `X-Real-IP` when the direct peer
+   is in `TRUSTED_PROXY_CIDRS`, otherwise `RemoteAddr`; the port is bound to `127.0.0.1` and ufw is default-deny.
+   Remaining for build time only: infra measures the exact peer address to set the default range.
 5. **Per-code counter**: accept the argument in section 4, or have the QR carry an extra public id for an explicit per-code
    attempt counter?
 6. **Key storage on the phone**: keep `SharedPreferences` for now (proposed) or add Android secure storage already
