@@ -136,8 +136,10 @@ class OfflineQueue extends ChangeNotifier {
 
   /// The server is not reachable or failing, or the access code is wrong: the operation
   /// itself was not judged, so it stays queued. (storeError in the server maps any
-  /// database failure to 500, which is temporary.)
-  static bool isTemporary(ApiException e) => const {0, 401, 500, 502, 503, 504}.contains(e.status);
+  /// database failure to 500, which is temporary.) Every 5xx counts, because a proxy such as
+  /// Cloudflare answers 520-524 when the origin is down; so do 404 (a proxy or path
+  /// misroute: POST /api/movements never answers it for a bad item), 408 and 429.
+  static bool isTemporary(ApiException e) => e.status == 0 || e.status >= 500 || const {401, 404, 408, 429}.contains(e.status);
 
   bool _inScope(QueuedOperation o, String url, String code) =>
       o.serverUrl.isNotEmpty && o.serverUrl == normalizeUrl(url) && o.accessCode == code;

@@ -56,6 +56,8 @@ class LedgerServer {
         requests.add(body);
         final fail = failFor['${body['qty']}'];
         if (fail != null) return _json({'error': 'bad item'}, fail);
+        // Cloudflare answers 52x with an HTML page when the origin is down.
+        if (status >= 520) return http.Response('<html>origin down</html>', status, headers: {'content-type': 'text/html'});
         if (status >= 400) return _json({'error': 'boom'}, status);
         ledger.putIfAbsent(body['id'] as String, () => body);
         if (loseNextResponse) {
@@ -199,7 +201,7 @@ void main() {
     });
 
     test('a network error, 500 or 401 stops the flush and rejects nothing', () async {
-      for (final status in [500, 503, 401]) {
+      for (final status in [500, 503, 401, 522, 521, 404, 429]) {
         final q = await newQueue();
         final s = LedgerServer()..status = status;
         await q.enqueue(op('a'));
@@ -270,6 +272,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(s.requests.map((r) => r['qty']), [3, 4]);
       expect(find.byKey(const Key('queue_banner')), findsNothing);
+    });
+
+    testWidgets('a post answered 522 by the proxy (origin down) is queued', (tester) async {
+      final q = await newQueue();
+      final s = LedgerServer();
+      await pumpForm(tester, s, q);
+      s.status = 522;
+
+      await enterAndPost(tester, '3');
+      expect(find.text('Ожидают отправки: 1'), findsOneWidget);
+      expect(find.textContaining('сохранена на телефоне'), findsOneWidget);
+      expect(q.items.single.rejection, isNull);
     });
 
     testWidgets('a new operation goes behind the waiting ones, so a count cannot overtake a receipt', (tester) async {
