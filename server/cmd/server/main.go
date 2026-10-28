@@ -2,18 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"time"
 
 	"qoimeks/server/internal/api"
 	"qoimeks/server/internal/config"
 	"qoimeks/server/internal/parse"
+	"qoimeks/server/internal/providers"
+	"qoimeks/server/internal/secrets"
 	"qoimeks/server/internal/store"
-	"qoimeks/server/internal/stt"
 )
 
 func main() {
@@ -58,46 +59,39 @@ func main() {
 	if srv.AccessToken == "" {
 		slog.Warn("ACCESS_TOKEN is not set: anyone who can reach this server can use it")
 	}
-	// The provider is named by LLM_PROVIDER, or is the first one whose key is present.
-	provider := os.Getenv("LLM_PROVIDER")
-	if provider == "" {
-		for _, name := range []string{"anthropic", "openai", "xai", "deepseek", "minimax"} {
-			if os.Getenv(parse.Providers[name].KeyVar) != "" {
-				provider = name
-				break
-			}
-		}
-	}
-	if provider == "" {
-		slog.Warn("no LLM provider configured: spoken phrases are shown but not turned into operations")
-	} else {
-		parser, label, err := parse.New(parse.Settings{
-			Provider: provider,
-			APIKey:   config.Get("", "LLM_API_KEY", parse.Providers[strings.ToLower(provider)].KeyVar),
-			BaseURL:  os.Getenv("LLM_BASE_URL"),
-			Model:    os.Getenv("LLM_MODEL"),
-			JSONMode: os.Getenv("LLM_JSON_MODE"),
-		})
-		if err != nil {
-			slog.Error("LLM configuration", "err", err)
-			os.Exit(1)
-		}
-		srv.Parser = parser
-		srv.LLMName = label
-		slog.Info("phrases are parsed by", "llm", label)
-	}
-	eleven := config.Get("", "ELEVENLABS_API_KEY", "ELEVENLAB_API_KEY", "elevenlabs_api_key", "elevenlab_api_key")
-	sttKey, sttURL := os.Getenv("STT_API_KEY"), os.Getenv("STT_BASE_URL")
-	switch {
-	case sttKey != "" || sttURL != "":
-		srv.STTName = "openai-compatible"
-		srv.Transcriber = stt.NewOpenAICompatible(
-			config.Get("https://api.openai.com/v1", "STT_BASE_URL"), sttKey, config.Get("gpt-4o-transcribe", "STT_MODEL"))
-	case eleven != "":
-		srv.STTName = "elevenlabs"
-		srv.Transcriber = stt.NewElevenLabs(eleven, config.Get("scribe_v2", "STT_MODEL"))
+	// Provider settings: stored (encrypted with SETTINGS_KEY) first, environment second.
+	var settingsKey secrets.Key
+	switch raw := os.Getenv("SETTINGS_KEY"); {
+	case raw == "":
+		slog.Info("SETTINGS_KEY is not set: stored provider keys are disabled, provider keys come from the environment")
 	default:
+		if settingsKey, err = secrets.ParseKey(raw); err != nil {
+			slog.Error("SETTINGS_KEY is invalid: expected base64 of 32 bytes; stored provider keys are disabled")
+		}
+	}
+	resolver := &providers.Resolver{Store: st, Key: settingsKey}
+	srv.Providers = resolver
+	cfg, source, err := resolver.LLMConfig(ctx)
+	switch {
+	case errors.Is(err, providers.ErrNotConfigured):
+		slog.Warn("no LLM provider configured: spoken phrases are shown but not turned into operations")
+	default:
+		_, label, err := parse.New(cfg)
+		if err != nil {
+			if source == providers.SourceStored {
+				slog.Error("stored LLM configuration is unusable", "err", err)
+			} else {
+				slog.Error("LLM configuration", "err", err)
+				os.Exit(1)
+			}
+		} else {
+			slog.Info("phrases are parsed by", "llm", label, "source", source)
+		}
+	}
+	if stc, source, err := resolver.STTConfig(ctx); err != nil {
 		slog.Warn("no ELEVENLABS_API_KEY or STT_API_KEY: voice input is disabled")
+	} else {
+		slog.Info("speech is recognised by", "stt", stc.Provider, "source", source)
 	}
 
 	// Every key the server may hold, set or not; short and empty values are ignored later.
