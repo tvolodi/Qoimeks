@@ -201,7 +201,7 @@ func TestSettingsUIOffByDefault(t *testing.T) {
 			t.Errorf("served page contains %q", bad)
 		}
 	}
-	for _, want := range []string{`id="page-feedback"`, `href="#feedback"`, "const pages = ['balances', 'excel', 'history', 'feedback'];"} {
+	for _, want := range []string{`id="page-feedback"`, `href="#feedback"`, "const pages = ['balances', 'excel', 'history', 'feedback'];", "В приложении на телефоне нажмите значок шестерёнки"} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Errorf("served page lost %q", want)
 		}
