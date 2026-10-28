@@ -39,6 +39,7 @@ On first launch the app asks for the operator's name and the server address
 | `STT_API_KEY`, `STT_BASE_URL` | — | instead of ElevenLabs: any service with an OpenAI-style `/audio/transcriptions` |
 | `STT_MODEL` | `scribe_v2` / `gpt-4o-transcribe` | speech model |
 | `SETTINGS_KEY` | — | base64 of 32 random bytes (`openssl rand -base64 32`); encrypts the provider API keys stored on the server. Without it stored keys are not used and cannot be saved |
+| `MAINTENANCE_MODE` | — | `1`/`on` (read at start) freezes writes: every POST/PUT/PATCH/DELETE (operations, reverse, import, feedback, settings, tenant API) answers 503 with `Retry-After`; reads, `/healthz` and CORS preflight keep working. Used for the short write freeze before copying a schema |
 
 | `SETTINGS_UI` | off | `1` shows the «Настройки» section in the web interface and enables the `/api/settings/providers*` routes. Anything else (default): the section is cut from the served page and the routes answer 404 |
 
