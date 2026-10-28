@@ -49,6 +49,13 @@ type TableCopy struct {
 	SequenceName string // empty when the table has no identity column
 }
 
+// TableAnalyze is the result of the ANALYZE run on a copied table after the commit.
+type TableAnalyze struct {
+	Name    string
+	Elapsed time.Duration
+	Err     error // the copy stays committed; the operator runs ANALYZE by hand
+}
+
 // CopyReport is what CopyToTenant returns, also with an error when verification failed.
 type CopyReport struct {
 	TenantID      uuid.UUID
@@ -56,7 +63,8 @@ type CopyReport struct {
 	TargetSchema  string
 	DryRun        bool
 	Tables        []TableCopy
-	SourceCurrent string // checksum of the current balance per SKU and location
+	Analyzed      []TableAnalyze // empty on a dry run or when the copy failed
+	SourceCurrent string         // checksum of the current balance per SKU and location
 	TargetCurrent string
 	Elapsed       time.Duration
 }
@@ -69,7 +77,8 @@ func ident(parts ...string) string { return pgx.Identifier(parts).Sanitize() }
 // unknown, when a target table has rows, or when the table shapes differ. Before the
 // commit it compares row counts and checksums per table and the current balances;
 // any difference aborts with ErrCopyMismatch and nothing is changed. With DryRun the
-// transaction is always rolled back.
+// transaction is always rolled back. After a real commit each copied table is analyzed;
+// a failure there is recorded in the report, not returned.
 func (s *Store) CopyToTenant(ctx context.Context, opt CopyOptions) (CopyReport, error) {
 	start := time.Now()
 	src := opt.SourceSchema
@@ -246,6 +255,17 @@ func (s *Store) CopyToTenant(ctx context.Context, opt CopyOptions) (CopyReport, 
 		return rep, err
 	}
 	committed = true
+	// The copy is committed; ANALYZE failing must not turn it into a failure. Without
+	// statistics the first reads of a large tenant take minutes.
+	for _, t := range copyTables {
+		began := time.Now()
+		ta := TableAnalyze{Name: t.name}
+		if _, err := conn.Exec(ctx, `analyze `+ident(dst, t.name)); err != nil {
+			ta.Err = err
+		}
+		ta.Elapsed = time.Since(began)
+		rep.Analyzed = append(rep.Analyzed, ta)
+	}
 	rep.Elapsed = time.Since(start)
 	return rep, nil
 }

@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,7 +53,21 @@ func main() {
 		fmt.Println("DRY RUN: all checks passed, rolled back, nothing was changed")
 	} else {
 		fmt.Println("DONE: copied and verified, committed")
+		if failed := analyzeFailures(rep); len(failed) > 0 {
+			fmt.Printf("WARNING: ANALYZE failed on %s; the copy is committed and correct. Run ANALYZE by hand: psql -c 'ANALYZE %s.<table>' for each table\n",
+				strings.Join(failed, ", "), rep.TargetSchema)
+		}
 	}
+}
+
+func analyzeFailures(r store.CopyReport) []string {
+	var failed []string
+	for _, a := range r.Analyzed {
+		if a.Err != nil {
+			failed = append(failed, a.Name)
+		}
+	}
+	return failed
 }
 
 func printReport(r store.CopyReport) {
@@ -66,6 +81,13 @@ func printReport(r store.CopyReport) {
 			state = "MISMATCH"
 		}
 		fmt.Printf("  %-10s rows %d -> %d  md5 %s -> %s  %s  %v\n", t.Name, t.SourceRows, t.TargetRows, t.SourceSum, t.TargetSum, state, t.Elapsed.Round(time.Millisecond))
+	}
+	for _, a := range r.Analyzed {
+		if a.Err != nil {
+			fmt.Printf("  analyze %-10s FAILED: %v\n", a.Name, a.Err)
+			continue
+		}
+		fmt.Printf("  analyze %-10s %v\n", a.Name, a.Elapsed.Round(time.Millisecond))
 	}
 	if r.SourceCurrent != "" || r.TargetCurrent != "" {
 		fmt.Printf("  current balances md5 %s -> %s\n", r.SourceCurrent, r.TargetCurrent)
