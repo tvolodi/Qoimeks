@@ -72,6 +72,22 @@ or Claude subscription; it is created and billed separately on the provider's de
 Without a speech key the app works from the keyboard only. With a speech key but no
 language model, the microphone shows what was heard and the operator fills the form by hand.
 
+### Settings page (providers and keys)
+
+The web interface has a section «Настройки» (`/#settings`, after signing in) to choose the
+language-model and speech provider, change the model, enter an API key and press «Проверить».
+Test makes one cheap call with the saved settings (the environment when nothing is saved): a
+one-phrase parse for the language model, 0.1 s of silence for speech, and shows ok or the
+error with every known key removed. The key is encrypted with `SETTINGS_KEY` before it is
+stored; the page shows only `••••` and the last four characters (none for short keys), and
+leaving the key field empty keeps the stored key.
+
+The routes are `GET`/`PUT /api/settings/providers` (PUT body: `kind` `llm` or `stt`, `provider`,
+`model`, `api_key`, `keep_key`) and `POST /api/settings/providers/test` (`{"kind": "llm"}`). They
+accept only the shared `ACCESS_TOKEN`: no code gives 401, a tenant's access code gives 403 and
+stores nothing, and with `ACCESS_TOKEN` unset they are refused (403) rather than left open. The
+settings are never sent to the app. Saving a key without a valid `SETTINGS_KEY` gives 409.
+
 ### Feedback
 
 `POST /api/feedback` (bearer access code, like the other `/api` routes) appends a report from
