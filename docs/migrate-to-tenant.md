@@ -48,7 +48,16 @@ qoimeks-migrate-tenant <image> --tenant-id <tenant uuid> --dry-run` does the sam
 Flags: `--tenant-id` (required), `--source-schema` (default `public`), `--dry-run`
 (does everything, rolls back, prints the report; sequences are not touched).
 
-Exit code 0: success. 1: refused or failed, nothing was changed.
+After the commit of a real run (never in `--dry-run`), the tool runs `ANALYZE` on each
+copied table of the tenant schema (`locations`, `skus`, `imports`, `movements`,
+`balances`, `feedback`) and prints the time per table. Without statistics the first read
+of a large tenant is very slow (a 300k-row rehearsal: 1 min 48 s, then 0.3 s). If an
+`ANALYZE` fails, the copy stays committed and correct; the tool prints a `WARNING ...
+Run ANALYZE by hand` line and still exits 0. Then run `ANALYZE t_<id>.<table>;` in psql
+for the tables named in the warning.
+
+Exit code 0: success (also when only `ANALYZE` failed: read the output for `WARNING`).
+1: refused or failed, nothing was changed.
 
 ## Procedure and rollback
 
@@ -58,7 +67,9 @@ Exit code 0: success. 1: refused or failed, nothing was changed.
    `pg_dump --format=custom --file=qoimeks-before-copy.dump "$DATABASE_URL"`.
 3. Create the tenant (admin API `POST /tenants`) if it does not exist yet.
 4. Run with `--dry-run`, read the report.
-5. Run for real. The run is one transaction: if it fails, the tenant is as it was.
+5. Run for real. The run is one transaction: if it fails, the tenant is as it was. When it
+   has committed it analyzes the tables (see above); check the output for `WARNING` before
+   unfreezing, and run `ANALYZE` by hand if it asks for it.
 6. Rollback after a successful run (before the tenant is used): the copy is additive, the
    source is intact, so switching back means pointing clients at the shared access token
    again. To empty the tenant's tables, the append-only triggers forbid DELETE and
