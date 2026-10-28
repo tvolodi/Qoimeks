@@ -254,6 +254,12 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// writeSourceError is writeError plus the part that failed ("speech" or "llm"), so the
+// app can say which one is down.
+func writeSourceError(w http.ResponseWriter, status int, source, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg, "source": source})
+}
+
 func storeError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -380,7 +386,7 @@ func (s *Server) parseText(w http.ResponseWriter, r *http.Request) {
 func (s *Server) parseVoice(w http.ResponseWriter, r *http.Request) {
 	transcriber, sttName := s.transcriber(r.Context())
 	if transcriber == nil {
-		writeError(w, http.StatusServiceUnavailable, "speech recognition is not configured on the server")
+		writeSourceError(w, http.StatusServiceUnavailable, "speech", "speech recognition is not configured on the server")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAudioBytes)
@@ -401,7 +407,7 @@ func (s *Server) parseVoice(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("transcription failed", "err", err)
 		s.recordFailure(r, "speech_error", sttName, err)
-		writeError(w, http.StatusBadGateway, "speech recognition failed")
+		writeSourceError(w, http.StatusBadGateway, "speech", "speech recognition failed")
 		return
 	}
 	if p, _ := s.parser(r.Context()); p == nil && text != "" {
@@ -420,7 +426,7 @@ func (s *Server) draft(w http.ResponseWriter, r *http.Request, text string) {
 	}
 	parser, llmName := s.parser(r.Context())
 	if parser == nil {
-		writeError(w, http.StatusServiceUnavailable, "phrase parsing is not configured on the server")
+		writeSourceError(w, http.StatusServiceUnavailable, "llm", "phrase parsing is not configured on the server")
 		return
 	}
 	catalog, err := s.store(r).Catalog(r.Context())
@@ -434,7 +440,7 @@ func (s *Server) draft(w http.ResponseWriter, r *http.Request, text string) {
 	if err != nil {
 		slog.Error("parsing failed", "err", err)
 		s.recordFailure(r, "llm_error", llmName, err)
-		writeError(w, http.StatusBadGateway, "could not understand the phrase")
+		writeSourceError(w, http.StatusBadGateway, "llm", "could not understand the phrase")
 		return
 	}
 	writeJSON(w, http.StatusOK, resolve(catalog, text, d))
