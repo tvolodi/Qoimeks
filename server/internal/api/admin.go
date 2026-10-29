@@ -50,6 +50,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/v1/tenants/{id}/expire", guard(s.setTenantStatus(store.TenantExpired)))
 	mux.HandleFunc("POST /admin/v1/tenants/{id}/rotate-code", guard(s.rotateTenantCode))
 	mux.HandleFunc("GET /admin/v1/tenants/{id}", guard(s.getTenant))
+	s.pairingRoutes(mux, guard)
 }
 
 // clock is the server's time; tests replace s.now.

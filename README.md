@@ -222,6 +222,12 @@ the request from that tenant's schema. A suspended tenant gets 403 `tenant suspe
 The site creates, suspends and resumes tenants through `/admin/v1` (bearer `PROVISIONING_TOKEN`,
 30 requests a minute); the contract is in `docs/public-page-and-signup-draft.md`, section 3.
 
+Pairing admin calls (same bearer and limit; design in `docs/pairing-design.md`):
+`POST /admin/v1/tenants/{id}/pairings` makes a one-time code (5 unused codes and 50 devices per
+tenant at most, 10 minutes by default; refused with 409 for a suspended or expired tenant),
+`POST .../pairings/{pairing_id}/cancel`, `GET .../devices` and `POST .../devices/{device_id}/revoke`.
+A pairing or device of another tenant answers 404. The code is shown only in the create response.
+
 Notes for developers:
 - With an empty `ACCESS_TOKEN` the default schema stays open to any request, as before; a tenant
   is chosen only by an exact match of its access code.
