@@ -158,6 +158,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/feedback", s.postFeedback)
 	mux.HandleFunc("GET /api/feedback", s.listFeedback)
 	mux.HandleFunc("GET /api/feedback/export.md", s.feedbackExport)
+	s.codesRoutes(mux)
 	s.webRoutes(mux)
 	s.importRoutes(mux)
 	s.adminRoutes(mux)
