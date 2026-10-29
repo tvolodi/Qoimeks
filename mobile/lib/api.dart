@@ -169,7 +169,7 @@ class PairResult {
 }
 
 class ApiException implements Exception {
-  const ApiException(this.status, this.message, {this.source});
+  const ApiException(this.status, this.message, {this.source, this.reason});
 
   /// HTTP status, or 0 when the server could not be reached.
   final int status;
@@ -177,6 +177,11 @@ class ApiException implements Exception {
 
   /// Which part failed behind the server, when it says so: 'speech' or 'llm'.
   final String? source;
+
+  /// Machine-readable cause next to `error`, for example `device_revoked` on a 401.
+  final String? reason;
+
+  bool get isDeviceRevoked => status == 401 && reason == 'device_revoked';
 
   @override
   String toString() => message;
@@ -242,6 +247,7 @@ class ApiClient {
         resp.statusCode,
         body is Map ? '${body['error']}' : 'HTTP ${resp.statusCode}',
         source: body is Map && body['source'] is String ? body['source'] as String : null,
+        reason: body is Map && body['reason'] is String ? body['reason'] as String : null,
       );
       if (observe) onError?.call(path, err);
       throw err;

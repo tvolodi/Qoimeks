@@ -29,6 +29,9 @@ class AppSettings extends ChangeNotifier {
   String operator;
   String lang;
 
+  /// The server said this phone's device key was revoked; cleared by the next update (pairing again).
+  bool deviceRevoked = false;
+
   /// When the update manifest was last read successfully (ms since epoch, 0 = never).
   int lastUpdateCheck;
 
@@ -54,6 +57,12 @@ class AppSettings extends ChangeNotifier {
     await p.setInt('lastUpdateCheck', lastUpdateCheck);
   }
 
+  void markDeviceRevoked() {
+    if (deviceRevoked) return;
+    deviceRevoked = true;
+    notifyListeners();
+  }
+
   Future<void> update({
     required String serverUrl,
     required String accessCode,
@@ -64,6 +73,7 @@ class AppSettings extends ChangeNotifier {
     this.accessCode = accessCode.trim();
     this.operator = operator.trim();
     this.lang = lang;
+    deviceRevoked = false;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setString('serverUrl', this.serverUrl);

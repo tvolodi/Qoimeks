@@ -367,6 +367,12 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
       ),
       body: Column(
         children: [
+          DeviceRevokedBanner(
+            settings: widget.settings,
+            onConnect: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => SettingsScreen(settings: widget.settings, updates: widget.updates, feedback: widget.feedback),
+            )),
+          ),
           if (widget.updates != null) UpdateBanner(checker: widget.updates!),
           if (widget.offlineQueue != null) _buildQueueBanner(widget.offlineQueue!),
           Expanded(child: _catalog == null ? _buildLoading() : _buildForm(context)),

@@ -211,6 +211,14 @@ a phone without a camera shows a message in the app language and changes nothing
 values by hand always works. The app asks for the Android `CAMERA` permission only when the
 button is pressed.
 
+The settings also have a "Подключение по коду / Код арқылы қосылу" section: type the pairing code
+(upper-cased as you type, with or without the hyphen) and press "Подключить". The app exchanges the
+code for its own device key, saves the address and the key (shown masked in the access code field)
+and shows "Подключено как «<phone>»". A pairing QR (`qoimeks://pair?...`) scanned with the button
+above does the same at once. Errors (wrong, used or expired code; too many attempts; unavailable
+tenant; no network) are shown in the app language. A plain `http` address shows a warning. If the
+server reports the device key as revoked, a banner that cannot be dismissed asks to connect again.
+
 ## Tenants
 
 One server can host several tenants. Each tenant is a PostgreSQL schema (`t_<tenant id>`) with its

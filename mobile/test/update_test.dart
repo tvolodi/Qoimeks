@@ -316,6 +316,10 @@ void main() {
 
   group('settings screen', () {
     Future<void> pumpSettings(WidgetTester tester, Fixture f) async {
+    // The form got longer with the pairing section: a taller screen keeps Save and the version in view.
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
           home: SettingsScreen(settings: f.settings, updates: f.checker),

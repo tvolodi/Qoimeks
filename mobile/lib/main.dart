@@ -73,7 +73,10 @@ class QoimeksApp extends StatelessWidget {
                     feedback?.retryPending();
                     if (queue != null) unawaited(flushQueue(queue!, settings));
                   },
-                  onError: feedback?.onApiError,
+                  onError: (path, e) {
+                    if (e.isDeviceRevoked) settings.markDeviceRevoked();
+                    feedback?.onApiError(path, e);
+                  },
                 ),
                 voice: MicrophoneCapture(),
                 updates: updates,
