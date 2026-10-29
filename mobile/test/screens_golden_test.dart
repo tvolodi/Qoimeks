@@ -39,7 +39,7 @@ Future<void> _loadFonts() async {
   if (root != null) {
     await load(
       'MaterialIcons',
-      '$root/bin/cache/artifacts/material_fonts/materialicons-regular.otf',
+      '$root/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
     );
   }
   await load(AppFonts.sans, 'assets/fonts/Onest-Variable.ttf');
