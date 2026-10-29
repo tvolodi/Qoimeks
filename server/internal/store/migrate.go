@@ -18,6 +18,7 @@ var publicOnly = map[string]bool{
 	"006_tenants_drop_access_code.sql": true,
 	"007_tenants_expiry.sql":           true,
 	"009_provider_settings.sql":        true,
+	"010_pairing.sql":                  true,
 }
 
 // Migrate applies the embedded migrations that have not run yet to the default schema.
