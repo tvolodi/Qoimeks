@@ -141,6 +141,10 @@ interface has three pages: balances, import and export, and the import history.
   location codes are not exported).
 - **Коды** (button on each balances row) opens a panel to list, add and remove the barcodes of a SKU;
   the search box also matches codes, and Enter looks the typed code up (`/api/codes/lookup`).
+- **App, codes:** the operation form has a «Найти по коду / Код бойынша табу» button (scan or type). The `#` button
+  beside the item or location opens its codes: list, «Добавить код» by scan or typing, «Удалить» (soft, asks first). A code held
+  by another item shows the owner's name. With an item chosen, an unknown code offers to assign it to that item.
+  No offline lookup; matching is case-sensitive.
 - **Загрузка из Excel** loads the bookkeepers' weekly workbook (article, name, closing balance,
   zone, rack, shelf, second place) in two steps: **check** reads the file and shows what would
   change without changing anything, **load** applies exactly the file that was checked. The file

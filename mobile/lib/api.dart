@@ -194,8 +194,56 @@ class CodeInfo {
   final String code;
 }
 
+/// A code attached to a SKU or location (`/api/codes`).
+class ItemCode {
+  const ItemCode({
+    required this.id,
+    required this.objectType,
+    required this.objectId,
+    required this.objectCode,
+    required this.objectName,
+    required this.codeType,
+    required this.code,
+  });
+
+  factory ItemCode.fromJson(Map<String, dynamic> j) => ItemCode(
+        id: j['id'] ?? '',
+        objectType: j['object_type'],
+        objectId: j['object_id'],
+        objectCode: j['object_code'] ?? '',
+        objectName: j['object_name'] ?? '',
+        codeType: j['code_type'] ?? 'manual',
+        code: j['code'] ?? '',
+      );
+
+  final String id;
+  final String objectType;
+  final int objectId;
+  final String objectCode;
+  final String objectName;
+  final String codeType;
+  final String code;
+}
+
+/// The object that already owns a code (409 `code_in_use`).
+class CodeOwner {
+  const CodeOwner({required this.objectType, required this.objectId, required this.objectCode, required this.objectName});
+
+  factory CodeOwner.fromJson(Map<String, dynamic> j) => CodeOwner(
+        objectType: j['object_type'] ?? 'sku',
+        objectId: j['object_id'] ?? 0,
+        objectCode: j['object_code'] ?? '',
+        objectName: j['object_name'] ?? '',
+      );
+
+  final String objectType;
+  final int objectId;
+  final String objectCode;
+  final String objectName;
+}
+
 class ApiException implements Exception {
-  const ApiException(this.status, this.message, {this.source, this.reason});
+  const ApiException(this.status, this.message, {this.source, this.reason, this.owner});
 
   /// HTTP status, or 0 when the server could not be reached.
   final int status;
@@ -206,6 +254,9 @@ class ApiException implements Exception {
 
   /// Machine-readable cause next to `error`, for example `device_revoked` on a 401.
   final String? reason;
+
+  /// Who holds the code, with `code_in_use`.
+  final CodeOwner? owner;
 
   bool get isDeviceRevoked => status == 401 && reason == 'device_revoked';
 
@@ -274,6 +325,7 @@ class ApiClient {
         body is Map ? '${body['error']}' : 'HTTP ${resp.statusCode}',
         source: body is Map && body['source'] is String ? body['source'] as String : null,
         reason: body is Map && body['reason'] is String ? body['reason'] as String : null,
+        owner: body is Map && body['owner'] is Map ? CodeOwner.fromJson(Map<String, dynamic>.from(body['owner'] as Map)) : null,
       );
       if (observe) onError?.call(path, err);
       throw err;
@@ -284,6 +336,9 @@ class ApiClient {
 
   Future<dynamic> _get(String path) =>
       _send(() async => _http.get(Uri.parse('$_base$path'), headers: await _requestHeaders()), path: path);
+
+  Future<dynamic> _delete(String path) =>
+      _send(() async => _http.delete(Uri.parse('$_base$path'), headers: await _requestHeaders()), path: path);
 
   Future<dynamic> _post(String path, Map<String, dynamic> body, {bool observe = true}) => _send(
         () async => _http.post(
@@ -348,6 +403,36 @@ class ApiClient {
       rethrow;
     }
   }
+
+  /// Active codes of a SKU or location, oldest first.
+  Future<List<ItemCode>> codes(String objectType, int objectId) async {
+    final j = await _get('/api/codes?object_type=$objectType&object_id=$objectId');
+    return [for (final c in (j['codes'] as List? ?? const [])) ItemCode.fromJson(c)];
+  }
+
+  /// Gives [code] to an item. [id] is made on the phone, so a retry does not add it twice.
+  /// A code held by another item is ApiException(409, reason `code_in_use`, owner).
+  Future<ItemCode> assignCode({
+    required String id,
+    required String objectType,
+    required int objectId,
+    required String codeType,
+    required String code,
+    required String operator,
+  }) async {
+    return ItemCode.fromJson(await _post('/api/codes', {
+      'id': id,
+      'object_type': objectType,
+      'object_id': objectId,
+      'code_type': codeType,
+      'code': code,
+      'operator': operator,
+    }));
+  }
+
+  /// Soft removal; the server keeps the history. Repeating the call is harmless.
+  Future<void> removeCode(String id, String operator) =>
+      _delete('/api/codes/${Uri.encodeComponent(id)}?operator=${Uri.encodeQueryComponent(operator)}');
 
   /// Current non-zero balances of one SKU, by location.
   Future<List<BalanceRow>> balances(int skuId) async {
