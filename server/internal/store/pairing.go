@@ -26,6 +26,9 @@ var (
 	ErrPendingLimit = errors.New("too many pending pairing codes")
 	// ErrDeviceLimit: the tenant already has MaxDevices devices.
 	ErrDeviceLimit = errors.New("too many devices")
+	// ErrTenantUnavailable: the code was valid but its tenant is suspended or expired. The
+	// code is spent and no device is made.
+	ErrTenantUnavailable = errors.New("tenant is not available")
 )
 
 // Pairing is one pairing code row; the code itself is not stored.
@@ -155,6 +158,7 @@ func (s *Store) ExchangePairing(ctx context.Context, rawCode string, info Device
 	}
 	var d Device
 	var key string
+	var unavailable bool
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var pairingID, tenantID uuid.UUID
 		var pLabel string
@@ -170,6 +174,14 @@ func (s *Store) ExchangePairing(ctx context.Context, rawCode string, info Device
 		}
 		if err := lockTenant(ctx, tx, tenantID); err != nil {
 			return err
+		}
+		t, err := scanTenant(tx.QueryRow(ctx, `select `+tenantColumns+` from tenants where tenant_id = $1`, tenantID))
+		if err != nil {
+			return err
+		}
+		if t.EffectiveStatus(now) != TenantActive {
+			unavailable = true // commit: the code stays spent
+			return nil
 		}
 		var n int
 		if err := tx.QueryRow(ctx, `select count(*) from devices where tenant_id = $1 and revoked_at is null`, tenantID).Scan(&n); err != nil {
@@ -193,6 +205,9 @@ func (s *Store) ExchangePairing(ctx context.Context, rawCode string, info Device
 	})
 	if err != nil {
 		return Device{}, "", err
+	}
+	if unavailable {
+		return Device{}, "", ErrTenantUnavailable
 	}
 	return d, key, nil
 }

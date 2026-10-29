@@ -161,6 +161,7 @@ func (s *Server) Handler() http.Handler {
 	s.webRoutes(mux)
 	s.importRoutes(mux)
 	s.adminRoutes(mux)
+	s.pairRoutes(mux)
 	if s.SettingsUI {
 		s.settingsRoutes(mux)
 	}
