@@ -4,6 +4,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/xuri/excelize/v2"
 
@@ -13,15 +14,15 @@ import (
 // Write saves the current stock as a workbook in the layout Parse reads, so the
 // file can be corrected in Excel and loaded back. A SKU takes one row per place
 // that holds it, its usual place first (with a zero balance if empty there, so
-// loading the file back keeps that place). Columns H and I are for people and
-// are ignored on loading.
+// loading the file back keeps that place). Columns H to J are for people and
+// are ignored on loading; J lists the SKU's active codes joined by "; ".
 func Write(w io.Writer, sheet string, items []store.StockItem) error {
 	f := excelize.NewFile()
 	defer f.Close()
 	if err := f.SetSheetName("Sheet1", sheet); err != nil {
 		return err
 	}
-	header := []any{"Артикул", "Номенклатура", "Конечный остаток", "Зона", "Стеллаж", "Полка", "Второе место", "Место", "Ед. изм."}
+	header := []any{"Артикул", "Номенклатура", "Конечный остаток", "Зона", "Стеллаж", "Полка", "Второе место", "Место", "Ед. изм.", "Коды / Codes"}
 	if err := f.SetSheetRow(sheet, "A1", &header); err != nil {
 		return err
 	}
@@ -29,10 +30,10 @@ func Write(w io.Writer, sheet string, items []store.StockItem) error {
 	if err != nil {
 		return err
 	}
-	if err := f.SetCellStyle(sheet, "A1", "I1", bold); err != nil {
+	if err := f.SetCellStyle(sheet, "A1", "J1", bold); err != nil {
 		return err
 	}
-	for col, width := range []float64{18, 44, 18, 8, 10, 8, 14, 12, 10} {
+	for col, width := range []float64{18, 44, 18, 8, 10, 8, 14, 12, 10, 28} {
 		name, _ := excelize.ColumnNumberToName(col + 1)
 		if err := f.SetColWidth(sheet, name, name, width); err != nil {
 			return err
@@ -54,7 +55,11 @@ func Write(w io.Writer, sheet string, items []store.StockItem) error {
 				shelfCell = n
 			}
 		}
-		cells := []any{it.Code, it.Name, qty, zone, rack, shelfCell, it.Alt, place, it.Unit}
+		codes := make([]string, len(it.Codes))
+		for i, c := range it.Codes {
+			codes[i] = c.Code
+		}
+		cells := []any{it.Code, it.Name, qty, zone, rack, shelfCell, it.Alt, place, it.Unit, strings.Join(codes, "; ")}
 		cell, _ := excelize.CoordinatesToCellName(1, row)
 		row++
 		return f.SetSheetRow(sheet, cell, &cells)

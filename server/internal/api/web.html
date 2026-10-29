@@ -88,6 +88,11 @@
   .seg button:hover { background: var(--c-surface-2); }
   .seg button.on:hover { background: var(--c-primary-hover); }
   button:disabled { background: var(--c-surface-2); border-color: var(--c-border); color: var(--c-text-mute); cursor: default; }
+  button.danger { background: var(--c-error); border-color: var(--c-error); color: var(--c-on-error); }
+  button.danger:hover { background: var(--c-error-text); border-color: var(--c-error-text); }
+  dialog.confirm { max-width: 32rem; width: calc(100% - 2 * var(--space-4)); padding: var(--space-6); border: 1px solid var(--c-border); border-radius: var(--radius-lg); background: var(--c-surface); color: var(--c-text); }
+  dialog.confirm::backdrop { background: var(--c-text-soft); opacity: 0.9; }
+  dialog.confirm .actions { margin-top: var(--space-4); }
   button.small { padding: var(--space-1) var(--space-3); font-size: var(--text-sm); }
   /* A mouse needs smaller targets than a finger. */
   @media (pointer: fine) { button.small { min-height: var(--size-touch-min-desktop); } }
@@ -103,6 +108,9 @@
   tr.empty td.num { color: var(--c-text-mute); }
   .place { display: inline-block; margin: 0 var(--space-2) var(--space-1) 0; padding: 1px var(--space-2); border: 1px solid var(--c-border); border-radius: var(--radius-full); font-family: var(--font-mono); font-size: var(--text-sm); white-space: nowrap; }
   .place.neg, td.neg { color: var(--c-error-text); border-color: var(--c-error); }
+  #codesList .codeRow { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; padding: var(--space-2) 0; border-bottom: 1px solid var(--c-border); }
+  #codesList .codeRow .place { margin: 0; }
+  input.mono { font-family: var(--font-mono); }
   .count { color: var(--c-text-soft); font-size: var(--text-sm); margin: var(--space-3) 0 0; }
   .scroll { overflow-x: auto; }
   .hint { color: var(--c-text-soft); font-size: var(--text-sm); }
@@ -213,7 +221,7 @@
   <div class="page" id="page-balances" hidden>
     <section>
       <h1>Остатки</h1>
-      <label for="q">Поиск по артикулу, названию или месту</label>
+      <label for="q">Поиск по артикулу, названию, месту или коду (Enter — найти по штрихкоду)</label>
       <input id="q" type="text" autocomplete="off">
       <div class="tools">
         <div class="seg" role="group" aria-label="Вид">
@@ -225,6 +233,26 @@
         <button id="reload" class="secondary" type="button">Обновить</button>
       </div>
       <div id="message" class="note"></div>
+    </section>
+
+    <dialog id="codeConfirm" class="confirm" aria-labelledby="codeConfirmText">
+      <p id="codeConfirmText"></p>
+      <div class="actions">
+        <button id="codeKeep" class="secondary" type="button">Оставить код</button>
+        <button id="codeDrop" class="danger" type="button">Удалить код</button>
+      </div>
+    </dialog>
+
+    <section id="codesPanel" hidden>
+      <h2 id="codesTitle"></h2>
+      <div id="codesList"></div>
+      <label for="codeInput" class="field">Новый код (введите или считайте сканером)</label>
+      <input id="codeInput" type="text" autocomplete="off" spellcheck="false" class="mono">
+      <div class="actions">
+        <button id="codeAdd" type="button">Сохранить код</button>
+        <button id="codesClose" class="secondary" type="button">Закрыть</button>
+      </div>
+      <div id="codesMessage" class="note"></div>
     </section>
 
     <section>
@@ -635,10 +663,10 @@ function render() {
   let shown = 0;
 
   if (mode === 'item') {
-    head(['№', true], ['Артикул'], ['Наименование'], ['Всего', true], ['Ед.'], ['Места']);
+    head(['№', true], ['Артикул'], ['Наименование'], ['Всего', true], ['Ед.'], ['Места'], ['Коды']);
     for (const it of stock) {
       if (onlyStock && it.places.length === 0) continue;
-      if (!matches(words, it.code, it.name, ...it.places.map(p => p.location_code))) continue;
+      if (!matches(words, it.code, it.name, ...it.places.map(p => p.location_code), ...(it.codes || []).map(c => c.code))) continue;
       shown++;
       const tr = el('tr', undefined, it.places.length ? '' : 'empty');
       tr.append(el('td', shown, 'num pos'), el('td', it.code, 'code'), el('td', it.name),
@@ -649,6 +677,15 @@ function render() {
       }
       if (!it.places.length) td.append(el('span', it.home ? 'нет на складе, место ' + it.home : 'нет на складе', 'hint'));
       tr.append(td);
+      const ct = el('td');
+      for (const c of it.codes || []) ct.append(el('span', c.code, 'place'));
+      const btn = el('button', 'Коды', 'secondary small');
+      btn.type = 'button';
+      btn.dataset.sku = it.sku_id;
+      btn.setAttribute('aria-label', 'Коды товара ' + it.code);
+      btn.onclick = () => openCodes(it);
+      ct.append(btn);
+      tr.append(ct);
       body.append(tr);
     }
     $('count').textContent = 'Товаров: ' + shown + ' из ' + stock.length;
@@ -683,11 +720,173 @@ function render() {
   if (shown === 0) {
     const tr = el('tr');
     const td = el('td', stock.length ? 'Ничего не найдено' : 'В системе пока нет товаров', 'hint');
-    td.colSpan = 6;
+    td.colSpan = 7;
     tr.append(td);
     body.append(tr);
   }
 }
+
+// --- codes panel: list, assign and remove the codes of one SKU; lookup by code in the search box
+let codesSKU = null; // the stock item the panel is open for
+
+const sayCodes = (text, kind) => say(text, kind, 'codesMessage');
+
+function guessCodeType(code) {
+  if (/^\d{13}$/.test(code)) return 'ean13';
+  if (/^\d{8}$/.test(code)) return 'ean8';
+  return 'manual';
+}
+
+async function codeCall(path, options) {
+  let resp;
+  try {
+    resp = await fetch(path, { ...options, headers: { Authorization: 'Bearer ' + access.token, 'Content-Type': 'application/json' } });
+  } catch (e) {
+    throw new Error('Нет связи с сервером.');
+  }
+  if (resp.ok) return resp.json();
+  let body = {};
+  try { body = await resp.json(); } catch (e) { /* not JSON */ }
+  const err = new Error(codeMessage(resp.status, body));
+  err.reason = body.reason;
+  throw err;
+}
+
+function codeMessage(status, body) {
+  switch (body.reason) {
+    case 'code_in_use': {
+      const o = body.owner || {};
+      return 'Код ' + body.code + ' уже занят: ' + (o.object_code || '') + ' ' + (o.object_name || '') + '. Один код может указывать только на один товар или место.';
+    }
+    case 'code_not_found': return 'Код не найден. Откройте товар и добавьте код кнопкой «Коды».';
+    case 'invalid_code': return 'Код не подходит: уберите пробелы и проверьте, что код не пустой и не слишком длинный.';
+    default: return messages[status] || body.error || ('Ошибка ' + status);
+  }
+}
+
+function renderCodes() {
+  const list = $('codesList');
+  list.replaceChildren();
+  $('codesPanel').hidden = !codesSKU;
+  if (!codesSKU) return;
+  $('codesTitle').textContent = 'Коды: ' + codesSKU.code + ' ' + codesSKU.name;
+  const codes = codesSKU.codes || [];
+  if (!codes.length) list.append(el('p', 'Кодов пока нет.', 'hint'));
+  for (const c of codes) {
+    const row = el('div', undefined, 'codeRow');
+    row.append(el('span', c.code, 'place'), el('span', ({ ean13: 'EAN-13', ean8: 'EAN-8', manual: 'свой код' })[c.code_type] || c.code_type, 'hint'));
+    const del = el('button', 'Удалить', 'secondary small');
+    del.type = 'button';
+    del.setAttribute('aria-label', 'Удалить код ' + c.code);
+    del.dataset.id = c.id;
+    del.onclick = () => removeCode(c);
+    row.append(del);
+    list.append(row);
+  }
+}
+
+function openCodes(it) {
+  codesSKU = it;
+  sayCodes('');
+  renderCodes();
+  $('codesPanel').scrollIntoView({ block: 'nearest' });
+  $('codeInput').focus();
+}
+
+async function refreshStock() {
+  stock = await callJSON('/api/stock');
+  if (codesSKU) codesSKU = stock.find(i => i.sku_id === codesSKU.sku_id) || null;
+  render();
+  renderCodes();
+}
+
+async function assignCode() {
+  if (needName(sayCodes)) return;
+  const code = $('codeInput').value.trim();
+  if (code === '') { sayCodes('Введите код.', 'error'); return; }
+  const send = type => codeCall('/api/codes', { method: 'POST', body: JSON.stringify({
+    id: crypto.randomUUID(), object_type: 'sku', object_id: codesSKU.sku_id, code_type: type, code, operator: access.who }) });
+  $('codeAdd').disabled = true;
+  try {
+    const type = guessCodeType(code);
+    try {
+      await send(type);
+    } catch (e) {
+      // an EAN-shaped number with a wrong check digit is still a usable code
+      if (e.reason !== 'invalid_code' || type === 'manual') throw e;
+      await send('manual');
+    }
+    $('codeInput').value = '';
+    await refreshStock();
+    sayCodes('Код ' + code + ' сохранён.', 'ok');
+  } catch (e) {
+    sayCodes(e.message, 'error');
+  }
+  $('codeAdd').disabled = false;
+}
+
+async function removeCode(c) {
+  if (needName(sayCodes)) return;
+  if (!await confirmRemoval('Удалить код ' + c.code + ' у товара ' + codesSKU.code + ' ' + codesSKU.name + '?')) {
+    focusCodeRow(c.id);
+    return;
+  }
+  try {
+    await codeCall('/api/codes/' + c.id + '?operator=' + encodeURIComponent(access.who), { method: 'DELETE' });
+    await refreshStock();
+    sayCodes('Код ' + c.code + ' удалён.', 'ok');
+    $('codeInput').focus();
+  } catch (e) {
+    sayCodes(e.message, 'error');
+    focusCodeRow(c.id);
+  }
+}
+
+// Confirmation dialog (rule 7): the safe choice on the left and focused, Esc keeps the code.
+function confirmRemoval(text) {
+  const dlg = $('codeConfirm');
+  $('codeConfirmText').textContent = text;
+  return new Promise(resolve => {
+    const done = answer => { dlg.onclose = null; if (dlg.open) dlg.close(); resolve(answer); };
+    $('codeKeep').onclick = () => done(false);
+    $('codeDrop').onclick = () => done(true);
+    dlg.onclose = () => done(false); // Esc
+    dlg.oncancel = () => done(false);
+    dlg.showModal();
+    $('codeKeep').focus();
+  });
+}
+
+function focusCodeRow(id) {
+  const b = [...$('codesList').querySelectorAll('button')].find(x => x.dataset.id === id);
+  (b || $('codeInput')).focus();
+}
+
+async function lookupCode() {
+  const code = $('q').value.trim();
+  if (code === '' || !access.signedIn) return;
+  try {
+    const c = await codeCall('/api/codes/lookup?code=' + encodeURIComponent(code));
+    // show the item (or the place) the code belongs to
+    $('q').value = c.object_code;
+    render();
+    say('Код ' + code + ': ' + c.object_code + ' ' + c.object_name, 'ok');
+  } catch (e) {
+    if (e.reason === 'code_not_found') render(); // plain text search stays in force
+    say(e.reason === 'code_not_found' ? 'По коду «' + code + '» ничего не найдено. Откройте товар и добавьте код кнопкой «Коды».' : e.message, 'error');
+  }
+}
+
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookupCode(); } });
+$('codeAdd').onclick = assignCode;
+$('codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); assignCode(); } });
+$('codesClose').onclick = () => {
+  const sku = codesSKU && codesSKU.sku_id;
+  codesSKU = null;
+  renderCodes();
+  const b = [...document.querySelectorAll('button[data-sku]')].find(x => x.dataset.sku === String(sku));
+  if (b) b.focus();
+};
 
 async function load() {
   if (!access.signedIn) return;
