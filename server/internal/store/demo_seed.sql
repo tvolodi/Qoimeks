@@ -20,3 +20,13 @@ insert into locations (code, name) values
     ('B-02', 'Ряд B, ячейка 2'),
     ('C-01', 'Ряд C, ячейка 1'),
     ('RAMP', 'Рампа приёмки');
+
+-- Every demo SKU has a home location, so the operation screen offers one straight away.
+update skus s set location_id = l.id
+from (values
+    ('BLT-M8-40', 'A-01'), ('BLT-M10-60', 'A-02'), ('NUT-M8', 'A-03'), ('NUT-M10', 'B-01'),
+    ('WSH-8', 'B-02'), ('SCR-4-40', 'C-01'), ('PNT-WH-10', 'C-01'), ('PNT-GR-3', 'C-01'),
+    ('CBL-3x2.5', 'B-01'), ('CBL-3x1.5', 'B-01'), ('GLV-L', 'A-01'), ('TAPE-48', 'RAMP')
+) as m(sku, loc)
+join locations l on l.code = m.loc
+where s.code = m.sku;

@@ -36,6 +36,12 @@ class FakeServer {
   int? voiceStatus;
   Map<String, dynamic> voiceBody = {};
   bool networkDown = false;
+
+  /// What /api/balances answers for the SKU.
+  List<Map<String, dynamic>> balances = [
+    {'sku_id': 1, 'location_id': 10, 'location_code': 'A-01', 'qty': 5},
+    {'sku_id': 1, 'location_id': 11, 'location_code': 'B-02', 'qty': 40},
+  ];
   final posted = <Map<String, dynamic>>[];
   final authHeaders = <String?>{};
 
@@ -55,10 +61,7 @@ class FakeServer {
           'locations': [_a01, _b02],
         });
       case '/api/balances':
-        return _json([
-          {'sku_id': 1, 'location_id': 10, 'location_code': 'A-01', 'qty': 5},
-          {'sku_id': 1, 'location_id': 11, 'location_code': 'B-02', 'qty': 40},
-        ]);
+        return _json(balances);
       case '/api/voice':
         if (voiceStatus != null) return _json(voiceBody, voiceStatus!);
         return _json(draft);
@@ -99,6 +102,47 @@ Future<void> pumpForm(WidgetTester tester, FakeServer server) async {
 FilledButton postButton(WidgetTester tester) => tester.widget<FilledButton>(find.byKey(const Key('post')));
 
 void main() {
+  Future<void> pickNut8(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('sku')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Гайка М8'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('a location without a balance row says there is no stock, not 0', (tester) async {
+    final server = FakeServer()
+      ..balances = [
+        {'sku_id': 1, 'location_id': 11, 'location_code': 'B-02', 'qty': 40},
+      ];
+    await pumpForm(tester, server);
+    await pickNut8(tester);
+    expect(find.text('A-01 — нет остатка'), findsOneWidget);
+    expect(find.textContaining('остаток 0'), findsNothing);
+    expect(find.text('Есть в: B-02 (40)'), findsOneWidget);
+  });
+
+  testWidgets('a real zero balance row still shows 0', (tester) async {
+    final server = FakeServer()
+      ..balances = [
+        {'sku_id': 1, 'location_id': 10, 'location_code': 'A-01', 'qty': 0},
+        {'sku_id': 1, 'location_id': 11, 'location_code': 'B-02', 'qty': 40},
+      ];
+    await pumpForm(tester, server);
+    await pickNut8(tester);
+    expect(find.text('A-01 — остаток 0 шт'), findsOneWidget);
+    expect(find.textContaining('нет остатка'), findsNothing);
+    expect(find.text('Есть в: B-02 (40)'), findsOneWidget);
+  });
+
+  testWidgets('the SKU list shows the unit in brackets after the code, never after a dot', (tester) async {
+    await pumpForm(tester, FakeServer());
+    await tester.tap(find.byKey(const Key('sku')));
+    await tester.pumpAndSettle();
+    expect(find.text('NUT-M8 (шт)'), findsOneWidget);
+    expect(find.text('NUT-M10 (шт)'), findsOneWidget);
+    expect(find.textContaining('·'), findsNothing);
+  });
+
   testWidgets('an operation can be entered entirely by hand', (tester) async {
     final server = FakeServer();
     await pumpForm(tester, server);
