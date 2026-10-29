@@ -114,6 +114,13 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
     return 0;
   }
 
+  /// True when the chosen location has no balance row for the SKU (as opposed to a real 0).
+  bool get _noStockHere {
+    final rows = _balances;
+    if (rows == null || _location == null) return false;
+    return !rows.any((b) => b.locationId == _location!.id);
+  }
+
   void _toast(String text, StatusKind kind) => showStatusSnack(context, text, kind);
 
   void _setSku(Sku? sku) {
@@ -557,9 +564,13 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
         Text.rich(
           TextSpan(children: [
             TextSpan(text: '${_location!.code} — ', style: mono),
-            TextSpan(text: '${_s('balance')} '),
-            TextSpan(text: fmtQty(here), style: mono),
-            TextSpan(text: ' ${sku.unit}'),
+            if (_noStockHere)
+              TextSpan(text: _s('no_stock'))
+            else ...[
+              TextSpan(text: '${_s('balance')} '),
+              TextSpan(text: fmtQty(here), style: mono),
+              TextSpan(text: ' ${sku.unit}'),
+            ],
           ]),
           style: theme.textTheme.bodyLarge,
         ),
