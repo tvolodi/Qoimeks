@@ -157,7 +157,7 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
       emptyText: _s('nothing_found'),
       items: _catalog!.skus,
       titleOf: (s) => s.name,
-      subtitleOf: (s) => '${s.code} · ${s.unit}',
+      subtitleOf: (s) => '${s.code} (${s.unit})',
       monoSubtitle: true,
     );
     if (sku != null) {
