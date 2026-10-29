@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -34,6 +35,12 @@ type ImportSKU struct {
 	// KeepBalances: a balance of this article could not be read, so none of its
 	// balances are touched.
 	KeepBalances bool
+	// Barcode is the code from the optional "Штрихкод" column; empty when the file has none.
+	// BarcodeRow is the file row it came from, MoreBarcodes are further codes of the same
+	// article found on its other rows.
+	Barcode      string
+	BarcodeRow   int
+	MoreBarcodes []string
 }
 
 type ImportResult struct {
@@ -64,6 +71,9 @@ type ImportReport struct {
 	Changes []BalanceChange `json:"balance_changes"`
 	// NotInFile lists stock of SKUs the file does not mention; it is left as it is.
 	NotInFile []BalanceChange `json:"not_in_file"`
+	// CodeWarnings lists the file's codes that were not assigned (taken by another object,
+	// not valid); the stock of their rows is still imported.
+	CodeWarnings []string `json:"-"`
 }
 
 type ImportRecord struct {
@@ -149,6 +159,9 @@ func (s *Store) Import(ctx context.Context, locations []ImportLocation, skus []I
 			} else {
 				res.SKUsUpdated++
 			}
+			if err := importCodes(ctx, tx, skuID, sku, opts.Operator, &res); err != nil {
+				return err
+			}
 			if !opts.PostBalances || sku.KeepBalances {
 				continue
 			}
@@ -191,7 +204,7 @@ func (s *Store) Import(ctx context.Context, locations []ImportLocation, skus []I
 				                     skus_created, skus_updated, locations_created, balances_posted)
 				overriding system value
 				values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-				importID, r.Who, r.Filename, r.Sheet, r.SHA256, r.WithBalances, r.Remarks,
+				importID, r.Who, r.Filename, r.Sheet, r.SHA256, r.WithBalances, r.Remarks+len(res.CodeWarnings),
 				res.SKUsCreated, res.SKUsUpdated, res.LocationsCreated, res.BalancesPosted)
 			return err
 		}
@@ -334,4 +347,49 @@ func (s *Store) CancelImport(ctx context.Context, importID int64, operator strin
 		return nil
 	})
 	return n, asInvalid(err)
+}
+
+// importCodes assigns the codes the file gives to one SKU. A code that is invalid or active on
+// another object is skipped with a warning; one the SKU already has is a no-op.
+func importCodes(ctx context.Context, tx pgx.Tx, skuID int64, sku ImportSKU, operator string, res *ImportReport) error {
+	if sku.Barcode == "" {
+		return nil
+	}
+	row := sku.BarcodeRow
+	for _, code := range append([]string{sku.Barcode}, sku.MoreBarcodes...) {
+		typ := "manual"
+		if EANCheckDigitValid(code) {
+			typ = "ean13"
+			if len(code) == 8 {
+				typ = "ean8"
+			}
+		}
+		in := NewCode{ID: uuid.New(), ObjectType: ObjectSKU, ObjectID: skuID, CodeType: typ, Code: code, Operator: operator}
+		if err := validateCode(in); err != nil {
+			res.CodeWarnings = append(res.CodeWarnings, fmt.Sprintf("строка %d: %s: код %q пропущен: %s", row, sku.Code, code, err))
+			continue
+		}
+		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtext('codes:' || $1))`, code); err != nil {
+			return err
+		}
+		owner, err := scanCode(tx.QueryRow(ctx, codeSelect+`where c.code = $1 and c.removed_at is null`, code))
+		switch {
+		case err == nil:
+			if owner.ObjectType != ObjectSKU || owner.ObjectID != skuID {
+				kind := "товаром"
+				if owner.ObjectType == ObjectLocation {
+					kind = "местом"
+				}
+				res.CodeWarnings = append(res.CodeWarnings, fmt.Sprintf("строка %d: %s: код %s уже занят %s «%s»", row, sku.Code, code, kind, owner.ObjectName))
+			}
+			continue
+		case !errors.Is(err, pgx.ErrNoRows):
+			return err
+		}
+		if _, err := tx.Exec(ctx, `insert into codes (id, object_type, object_id, code_type, code, created_by)
+			values ($1, $2, $3, $4, $5, $6)`, in.ID, in.ObjectType, in.ObjectID, in.CodeType, in.Code, in.Operator); err != nil {
+			return err
+		}
+	}
+	return nil
 }
