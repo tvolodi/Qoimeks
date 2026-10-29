@@ -117,11 +117,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _exchange(Strings s, String url, String code) async {
     final target = Uri.tryParse(url.trim());
     if (target == null || target.host.isEmpty) {
-      setState(() => _pairError = s('required'));
+      setState(() => _pairError = s('pair_need_server'));
       return;
     }
     if (code.trim().isEmpty) {
-      setState(() => _pairError = s('required'));
+      setState(() => _pairError = s('pair_need_code'));
       return;
     }
     setState(() {
@@ -348,7 +348,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 key: const Key('pair_connect'),
                 onPressed: _pairing ? null : () => _exchange(s, _server.text, _pairCode.text),
                 child: _pairing
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                        width: AppSize.icon,
+                        height: AppSize.icon,
+                        child: CircularProgressIndicator(strokeWidth: AppSpace.s1, color: LightColors.onPrimary),
+                      )
                     : Text(s('pair_connect')),
               ),
             ),
