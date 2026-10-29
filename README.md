@@ -137,6 +137,10 @@ interface has three pages: balances, import and export, and the import history.
 - **Balances** by SKU (with the places each is held in) or by place (with the SKUs on it), with search.
 - **Выгрузить в Excel** downloads the current stock as a workbook in the layout the importer
   reads, one row per SKU and place, so a file can be corrected in Excel and loaded back.
+  The last column, «Коды / Codes», lists the SKU's active codes joined by `; ` (ignored on loading;
+  location codes are not exported).
+- **Коды** (button on each balances row) opens a panel to list, add and remove the barcodes of a SKU;
+  the search box also matches codes, and Enter looks the typed code up (`/api/codes/lookup`).
 - **Загрузка из Excel** loads the bookkeepers' weekly workbook (article, name, closing balance,
   zone, rack, shelf, second place) in two steps: **check** reads the file and shows what would
   change without changing anything, **load** applies exactly the file that was checked. The file
