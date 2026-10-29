@@ -88,6 +88,11 @@
   .seg button:hover { background: var(--c-surface-2); }
   .seg button.on:hover { background: var(--c-primary-hover); }
   button:disabled { background: var(--c-surface-2); border-color: var(--c-border); color: var(--c-text-mute); cursor: default; }
+  button.danger { background: var(--c-error); border-color: var(--c-error); color: var(--c-on-error); }
+  button.danger:hover { background: var(--c-error-text); border-color: var(--c-error-text); }
+  dialog.confirm { max-width: 32rem; width: calc(100% - 2 * var(--space-4)); padding: var(--space-6); border: 1px solid var(--c-border); border-radius: var(--radius-lg); background: var(--c-surface); color: var(--c-text); }
+  dialog.confirm::backdrop { background: var(--c-text-soft); opacity: 0.9; }
+  dialog.confirm .actions { margin-top: var(--space-4); }
   button.small { padding: var(--space-1) var(--space-3); font-size: var(--text-sm); }
   /* A mouse needs smaller targets than a finger. */
   @media (pointer: fine) { button.small { min-height: var(--size-touch-min-desktop); } }
@@ -229,6 +234,14 @@
       </div>
       <div id="message" class="note"></div>
     </section>
+
+    <dialog id="codeConfirm" class="confirm" aria-labelledby="codeConfirmText">
+      <p id="codeConfirmText"></p>
+      <div class="actions">
+        <button id="codeKeep" class="secondary" type="button">Оставить код</button>
+        <button id="codeDrop" class="danger" type="button">Удалить код</button>
+      </div>
+    </dialog>
 
     <section id="codesPanel" hidden>
       <h2 id="codesTitle"></h2>
@@ -668,6 +681,7 @@ function render() {
       for (const c of it.codes || []) ct.append(el('span', c.code, 'place'));
       const btn = el('button', 'Коды', 'secondary small');
       btn.type = 'button';
+      btn.dataset.sku = it.sku_id;
       btn.setAttribute('aria-label', 'Коды товара ' + it.code);
       btn.onclick = () => openCodes(it);
       ct.append(btn);
@@ -745,7 +759,7 @@ function codeMessage(status, body) {
       return 'Код ' + body.code + ' уже занят: ' + (o.object_code || '') + ' ' + (o.object_name || '') + '. Один код может указывать только на один товар или место.';
     }
     case 'code_not_found': return 'Код не найден. Откройте товар и добавьте код кнопкой «Коды».';
-    case 'invalid_code': return 'Неверный код: ' + (body.error || '');
+    case 'invalid_code': return 'Код не подходит: уберите пробелы и проверьте, что код не пустой и не слишком длинный.';
     default: return messages[status] || body.error || ('Ошибка ' + status);
   }
 }
@@ -760,10 +774,11 @@ function renderCodes() {
   if (!codes.length) list.append(el('p', 'Кодов пока нет.', 'hint'));
   for (const c of codes) {
     const row = el('div', undefined, 'codeRow');
-    row.append(el('span', c.code, 'place'), el('span', c.code_type, 'hint'));
+    row.append(el('span', c.code, 'place'), el('span', ({ ean13: 'EAN-13', ean8: 'EAN-8', manual: 'свой код' })[c.code_type] || c.code_type, 'hint'));
     const del = el('button', 'Удалить', 'secondary small');
     del.type = 'button';
     del.setAttribute('aria-label', 'Удалить код ' + c.code);
+    del.dataset.id = c.id;
     del.onclick = () => removeCode(c);
     row.append(del);
     list.append(row);
@@ -812,14 +827,39 @@ async function assignCode() {
 
 async function removeCode(c) {
   if (needName(sayCodes)) return;
-  if (!confirm('Удалить код ' + c.code + ' у товара ' + codesSKU.code + ' ' + codesSKU.name + '?')) return;
+  if (!await confirmRemoval('Удалить код ' + c.code + ' у товара ' + codesSKU.code + ' ' + codesSKU.name + '?')) {
+    focusCodeRow(c.id);
+    return;
+  }
   try {
     await codeCall('/api/codes/' + c.id + '?operator=' + encodeURIComponent(access.who), { method: 'DELETE' });
     await refreshStock();
     sayCodes('Код ' + c.code + ' удалён.', 'ok');
+    $('codeInput').focus();
   } catch (e) {
     sayCodes(e.message, 'error');
+    focusCodeRow(c.id);
   }
+}
+
+// Confirmation dialog (rule 7): the safe choice on the left and focused, Esc keeps the code.
+function confirmRemoval(text) {
+  const dlg = $('codeConfirm');
+  $('codeConfirmText').textContent = text;
+  return new Promise(resolve => {
+    const done = answer => { dlg.onclose = null; if (dlg.open) dlg.close(); resolve(answer); };
+    $('codeKeep').onclick = () => done(false);
+    $('codeDrop').onclick = () => done(true);
+    dlg.onclose = () => done(false); // Esc
+    dlg.oncancel = () => done(false);
+    dlg.showModal();
+    $('codeKeep').focus();
+  });
+}
+
+function focusCodeRow(id) {
+  const b = [...$('codesList').querySelectorAll('button')].find(x => x.dataset.id === id);
+  (b || $('codeInput')).focus();
 }
 
 async function lookupCode() {
@@ -840,7 +880,13 @@ async function lookupCode() {
 $('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookupCode(); } });
 $('codeAdd').onclick = assignCode;
 $('codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); assignCode(); } });
-$('codesClose').onclick = () => { codesSKU = null; renderCodes(); };
+$('codesClose').onclick = () => {
+  const sku = codesSKU && codesSKU.sku_id;
+  codesSKU = null;
+  renderCodes();
+  const b = [...document.querySelectorAll('button[data-sku]')].find(x => x.dataset.sku === String(sku));
+  if (b) b.focus();
+};
 
 async function load() {
   if (!access.signedIn) return;

@@ -280,7 +280,7 @@ func TestStockCodesAndExportColumn(t *testing.T) {
 func TestWebCodesPanel(t *testing.T) {
 	c, _, _ := setup(t, &Server{AccessToken: "phone"})
 	page, _ := getBody(t, c.url+"/", "")
-	for _, want := range []string{`id="codesPanel"`, `id="codeInput"`, "/api/codes/lookup", "function assignCode", "function removeCode", "function lookupCode"} {
+	for _, want := range []string{`id="codesPanel"`, `id="codeInput"`, "/api/codes/lookup", "function assignCode", "function removeCode", `id="codeConfirm"`, "Оставить код", "function confirmRemoval", "function lookupCode"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
 		}
