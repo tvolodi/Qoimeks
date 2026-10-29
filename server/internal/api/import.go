@@ -95,7 +95,8 @@ func (s *Server) importWorkbook(w http.ResponseWriter, r *http.Request, apply bo
 	if apply {
 		slog.Info("workbook imported", "who", who, "file", header.Filename, "sheet", parsed.Sheet, "changes", changes.ImportResult)
 	}
-	remarks := parsed.Warnings
+	remarks := append([]string{}, parsed.Warnings...)
+	remarks = append(remarks, changes.CodeWarnings...)
 	if remarks == nil {
 		remarks = []string{}
 	}

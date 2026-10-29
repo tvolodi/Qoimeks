@@ -165,6 +165,13 @@ as a whole: **Отменить** in the history reverses each of its balance cha
 deleted — the ledger is append-only — and movements posted after the import stay. Names and
 places the import wrote into the catalog are not reverted.
 
+An optional column **Штрихкод** in the header row (the row that starts with «Артикул») gives an
+article a code (one per cell). The check warns about a code that is too long, has spaces, is already
+taken by another article or place, or stands on two articles of the file; the load assigns the other
+codes in the same transaction and skips the bad ones, the stock of their rows is still loaded. A code the
+article already has is left as it is; a new one is added next to the old. An import cancel does not remove
+codes. A workbook without the column imports as before.
+
 A balance typed as text is read whatever its decimal sign: `1,5`, `1.5`, `1 250,5`, `1.250,75`
 and `1,250.75` all work, and a single comma or dot is always the decimal sign (`1,000` is one,
 as 1C writes it). A balance that is not a number leaves that article's balances untouched.

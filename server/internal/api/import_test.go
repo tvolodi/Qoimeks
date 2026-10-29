@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -191,4 +192,74 @@ func TestAdminPageMovedToTheRoot(t *testing.T) {
 		t.Fatalf("old admin address: %v %v", resp, err)
 	}
 	resp.Body.Close()
+}
+
+func TestImportBarcodeColumn(t *testing.T) {
+	c, skus, _ := setup(t, &Server{AccessToken: "phone"})
+	// An existing SKU of the demo catalog owns a code; the file tries to use it for a new one.
+	var owner string
+	for code := range skus {
+		owner = code
+		break
+	}
+	if _, _, err := c.store.AssignCode(context.Background(), store.NewCode{ID: uuid.New(), ObjectType: "sku",
+		ObjectID: skus[owner], CodeType: "manual", Code: "TAKEN-1", Operator: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	file := workbook(t, [][]any{
+		{"Артикул", "Номенклатура", "Конечный остаток", "", "", "", "", "Штрихкод"},
+		{"Z-1", "Z-1 Замок", 10, "R", "I", 2, "", "4006381333931"},
+		{"Z-2", "Z-2 Кнопка", 4, "L", "A", 1, "", "TAKEN-1"},
+		{"Z-3", "Z-3 Петля", 2, "L", "A", 2, "", "4006381333931"},
+		{"Z-4", "Z-4 Ручка", 1, "L", "A", 3, "", "WITH SPACE"},
+	})
+	preview, apply := c.url+"/api/import/preview", c.url+"/api/import/apply"
+	fields := map[string]string{"balances": "true"}
+	var p importResponse
+	if got := upload(t, preview, "phone", file, fields, &p); got != 200 {
+		t.Fatalf("preview: %d", got)
+	}
+	// duplicate in the file, code owned by another SKU, code with a space.
+	if len(p.Remarks) != 3 {
+		t.Fatalf("remarks: %q", p.Remarks)
+	}
+	var cat store.Catalog
+	c.do("GET", "/api/catalog", nil, 200, &cat)
+	for _, s := range cat.SKUs {
+		if s.Code == "Z-1" {
+			t.Fatal("the preview changed the catalog")
+		}
+	}
+
+	fields["sha256"], fields["who"] = p.SHA256, "Гульнара"
+	var a importResponse
+	if got := upload(t, apply, "phone", file, fields, &a); got != 200 || !a.Applied || len(a.Remarks) != 3 {
+		t.Fatalf("apply: %d %+v", got, a)
+	}
+	if a.Changes.BalancesPosted != 4 {
+		t.Fatalf("stock of rows with bad codes must still load: %+v", a.Changes.ImportResult)
+	}
+	c.do("GET", "/api/catalog", nil, 200, &cat)
+	got := map[string]string{}
+	for _, s := range cat.SKUs {
+		for _, k := range s.Codes {
+			got[k.Code] = s.Code + "/" + k.CodeType
+		}
+	}
+	if got["4006381333931"] != "Z-1/ean13" || got["TAKEN-1"] != owner+"/manual" || len(got) != 2 {
+		t.Fatalf("codes: %v", got)
+	}
+
+	// Loading the same file again changes no code and adds no warning for Z-1.
+	var again importResponse
+	if code := upload(t, preview, "phone", file, fields, &again); code != 200 || len(again.Remarks) != 3 {
+		t.Fatalf("second preview: %d %q", code, again.Remarks)
+	}
+
+	// A workbook without the column imports as before.
+	plain := workbook(t, [][]any{{"Артикул", "Номенклатура"}, {"Z-5", "Z-5 Болт", 1, "C"}})
+	var q importResponse
+	if code := upload(t, preview, "phone", plain, nil, &q); code != 200 || len(q.Remarks) != 0 {
+		t.Fatalf("plain: %d %q", code, q.Remarks)
+	}
 }

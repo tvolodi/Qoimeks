@@ -130,3 +130,38 @@ func TestParse(t *testing.T) {
 		}
 	}
 }
+
+func TestParseBarcodeColumn(t *testing.T) {
+	f := excelize.NewFile()
+	rows := [][]any{
+		{"Артикул", "Номенклатура", "Конечный остаток", "", "", "", "", "Штрихкод"},
+		{"B-1", "B-1 Замок", 1, "L", "A", 1, "", "111"},
+		{"B-1", "B-1 Замок", 1, "L", "A", 2, "", "222"}, // second code of the same article
+		{"B-2", "B-2 Петля", 1, "L", "A", 3, "", "111"}, // same code on another article
+		{"B-3", "B-3 Ручка", 1, "L", "A", 4},            // no code
+	}
+	for i, r := range rows {
+		cell, _ := excelize.CoordinatesToCellName(1, i+1)
+		if err := f.SetSheetRow("Sheet1", cell, &r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "stock.xlsx")
+	if err := f.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Parse(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b1, b2, b3 := res.SKUs[0], res.SKUs[1], res.SKUs[2]
+	if b1.Barcode != "111" || b1.BarcodeRow != 2 || len(b1.MoreBarcodes) != 1 || b1.MoreBarcodes[0] != "222" {
+		t.Errorf("B-1: %+v", b1)
+	}
+	if b2.Barcode != "" || b3.Barcode != "" {
+		t.Errorf("B-2 %+v, B-3 %+v", b2, b3)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "111") {
+		t.Errorf("warnings: %q", res.Warnings)
+	}
+}
