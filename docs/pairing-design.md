@@ -1,8 +1,7 @@
-# Pairing a phone to a tenant with per-device keys — design (not built)
+# Pairing a phone to a tenant with per-device keys — design (built)
 
-Status: design only, 2026-10-28. Source: portfolio request (owner direction, QA only per D-042), decision D-045
-(pairing design before Stage 3), D-020 (only a hash of a tenant's access code is stored). Nothing here is built;
-no migration, no API change. Qoimeks is a pilot: this is the smallest design that meets the request.
+Status: built (Q-02), design of 2026-10-28; owner decisions D-049 apply: same provisioning token for pairing admin calls; at most 5 pending codes and 50 devices per tenant, code lifetime 10 minutes; revoke only through the admin API; device key stored as today (SharedPreferences, `Authorization: Bearer qdk_...`); plain http allowed with a warning; revoked devices kept; per-code counter as in section 4; Client 1 pairing optional and later; Option B later. The text below is the original design. Source: portfolio request (owner direction, QA only per D-042), decision D-045
+(pairing design before Stage 3), D-020 (only a hash of a tenant's access code is stored). Qoimeks is a pilot: this is the smallest design that meets the request.
 
 Marking: **VERIFIED** = read in the code of this repository on 2026-10-28. **PROPOSED** = a decision of this design,
 open to change by the owner. Every code, key and id in the examples is obviously fake.

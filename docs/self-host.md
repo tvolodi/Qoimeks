@@ -113,6 +113,10 @@ Whoever photographs that QR can use the server, so do not show it to others. By 
 in Settings type the server address (`https://qoimeks.example.com`), the access code and the
 name. Post a test operation, then see it in the web balances and in the app's History.
 
+Pairing with per-device keys (multi-tenant servers with `PROVISIONING_TOKEN`) is optional; set
+`TRUSTED_PROXY_CIDRS` to your reverse proxy's range so its per-address limits see the real client.
+See the README section [Pairing phones to a tenant](../README.md#pairing-phones-to-a-tenant).
+
 ## Backups and updates
 
 Everything is in the `dbdata` Docker volume of the `db` service (PostgreSQL 16): back it up with

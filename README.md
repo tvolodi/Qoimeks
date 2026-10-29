@@ -230,6 +230,21 @@ the request from that tenant's schema. A suspended tenant gets 403 `tenant suspe
 The site creates, suspends and resumes tenants through `/admin/v1` (bearer `PROVISIONING_TOKEN`,
 30 requests a minute); the contract is in `docs/public-page-and-signup-draft.md`, section 3.
 
+### Pairing phones to a tenant
+
+A phone can get its own revocable device key instead of the shared access code (design and decisions D-049 in
+`docs/pairing-design.md`). The old `ACCESS_TOKEN` and tenant codes keep working unchanged. Pairing is available only for tenants
+and only when `PROVISIONING_TOKEN` is set; the same token guards the pairing admin calls.
+
+- Limits: 5 unused codes and 50 devices per tenant; a code lives 10 minutes and works once.
+- Device keys (`qdk_...`) are sent as `Authorization: Bearer qdk_...`; the app keeps the key in its settings like the access code.
+  Only hashes of codes and keys are stored in the database; codes and keys are never logged.
+- Revoking is done only through the admin API (`POST .../devices/{device_id}/revoke`), not on the phone. Revoked devices stay in the
+  list; the app then shows a banner asking to connect again.
+- A plain `http` server address is allowed, with a warning in the app.
+- `TRUSTED_PROXY_CIDRS` (see Server settings) decides whose `X-Real-IP` is believed for the per-address exchange limits; set it to
+  the range of your reverse proxy (behind Docker port mapping, the compose network gateway).
+
 Pairing admin calls (same bearer and limit; design in `docs/pairing-design.md`):
 `POST /admin/v1/tenants/{id}/pairings` makes a one-time code (5 unused codes and 50 devices per
 tenant at most, 10 minutes by default; refused with 409 for a suspended or expired tenant),
