@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import 'api.dart';
+import 'code_find.dart';
+import 'qr_scanner.dart';
 import 'design/status.dart';
 import 'design/theme.dart';
 import 'design/tokens.dart';
@@ -24,7 +26,7 @@ enum _Mic { idle, recording, busy }
 /// The one form of the app. Every field can be typed or picked by hand, or the
 /// operator can say the whole operation and only check what was filled in.
 class OperationScreen extends StatefulWidget {
-  const OperationScreen({super.key, required this.settings, required this.api, required this.voice, this.updates, this.feedback, this.offlineQueue});
+  const OperationScreen({super.key, required this.settings, required this.api, required this.voice, this.updates, this.feedback, this.offlineQueue, this.scanner = const CameraQrScanner(anyBarcode: true)});
 
   final AppSettings settings;
   final OfflineQueue? offlineQueue;
@@ -32,6 +34,9 @@ class OperationScreen extends StatefulWidget {
   final FeedbackService? feedback;
   final ApiClient api;
   final VoiceCapture voice;
+
+  /// Reads barcodes for "find by code"; tests pass a fake.
+  final QrScanner scanner;
 
   @override
   State<OperationScreen> createState() => _OperationScreenState();
@@ -163,6 +168,33 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
     if (sku != null) {
       _candidates = const [];
       _setSku(sku);
+    }
+  }
+
+  /// Opens "find by code" and fills the SKU or the location field with what the code points to.
+  Future<void> _findByCode() async {
+    final found = await Navigator.of(context).push<CodeInfo>(MaterialPageRoute(
+      builder: (_) => CodeFindScreen(settings: widget.settings, api: widget.api, scanner: widget.scanner),
+    ));
+    final catalog = _catalog;
+    if (found == null || !mounted || catalog == null) return;
+    if (found.objectType == 'sku') {
+      Sku? sku;
+      for (final k in catalog.skus) {
+        if (k.id == found.objectId) sku = k;
+      }
+      if (sku == null) return _toast(_s('code_not_found').replaceAll('{code}', found.code), StatusKind.info);
+      _candidates = const [];
+      _setSku(sku);
+      _toast(_s('code_found_sku').replaceAll('{name}', sku.name), StatusKind.success);
+    } else {
+      final loc = catalog.locations.where((l) => l.id == found.objectId).firstOrNull;
+      if (loc == null) return _toast(_s('code_not_found').replaceAll('{code}', found.code), StatusKind.info);
+      setState(() {
+        _location = loc;
+        _locationIsUsual = false;
+      });
+      _toast(_s('code_found_location').replaceAll('{name}', loc.code), StatusKind.success);
     }
   }
 
@@ -336,6 +368,13 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
       appBar: AppBar(
         title: Text(widget.settings.operator),
         actions: [
+          if (_catalog != null)
+            IconButton(
+              key: const Key('find_by_code'),
+              tooltip: _s('find_by_code'),
+              icon: const Icon(Icons.qr_code_scanner),
+              onPressed: _findByCode,
+            ),
           IconButton(
             tooltip: _s('history'),
             icon: const Icon(Icons.history),
