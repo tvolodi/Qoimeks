@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/xuri/excelize/v2"
 
 	"qoimeks/server/internal/importer"
 	"qoimeks/server/internal/store"
@@ -214,5 +215,74 @@ func TestWebPageUsesInlineDesignTokens(t *testing.T) {
 	rules := page[strings.Index(page, "* { box-sizing"):strings.Index(page, "</style>")]
 	if hex := regexp.MustCompile(`#[0-9a-fA-F]{3,6}\b`).FindString(rules); hex != "" {
 		t.Errorf("colour literal %s outside the token block", hex)
+	}
+}
+
+// Active codes show in /api/stock and in the export's last column; a removed code leaves both.
+func TestStockCodesAndExportColumn(t *testing.T) {
+	c, skus, _ := setup(t, &Server{AccessToken: "phone"})
+	sku := skus["NUT-M8"]
+	var first store.Code
+	c.do("POST", "/api/codes", codeReq("sku", sku, "ean13", "4006381333931"), 201, &first)
+	c.do("POST", "/api/codes", codeReq("sku", sku, "manual", "NUT-ALT"), 201, nil)
+
+	codesOf := func() []store.CatalogCode {
+		var items []store.StockItem
+		c.do("GET", "/api/stock", nil, 200, &items)
+		for _, it := range items {
+			if it.SKUID == sku {
+				return it.Codes
+			}
+		}
+		t.Fatal("NUT-M8 missing")
+		return nil
+	}
+	if got := codesOf(); len(got) != 2 || got[0].Code != "4006381333931" || got[1].Code != "NUT-ALT" {
+		t.Fatalf("stock codes: %+v", got)
+	}
+
+	exportCell := func() string {
+		body, _ := getBody(t, c.url+"/api/stock/export", "phone")
+		f, err := excelize.OpenReader(strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		rows, err := f.GetRows(f.GetSheetName(0))
+		if err != nil || len(rows[0]) < 10 || rows[0][9] != "Коды / Codes" {
+			t.Fatalf("header: %v %v", rows, err)
+		}
+		for _, r := range rows[1:] {
+			if r[0] == "NUT-M8" {
+				if len(r) < 10 {
+					return ""
+				}
+				return r[9]
+			}
+		}
+		t.Fatal("NUT-M8 not in export")
+		return ""
+	}
+	if got := exportCell(); got != "4006381333931; NUT-ALT" {
+		t.Fatalf("export codes cell: %q", got)
+	}
+
+	c.do("DELETE", "/api/codes/"+first.ID.String()+"?operator=Aidar", nil, 200, nil)
+	if got := exportCell(); got != "NUT-ALT" {
+		t.Fatalf("after remove: %q", got)
+	}
+	if got := codesOf(); len(got) != 1 {
+		t.Fatalf("stock codes after remove: %+v", got)
+	}
+}
+
+// The page carries the codes panel and the lookup by the search box.
+func TestWebCodesPanel(t *testing.T) {
+	c, _, _ := setup(t, &Server{AccessToken: "phone"})
+	page, _ := getBody(t, c.url+"/", "")
+	for _, want := range []string{`id="codesPanel"`, `id="codeInput"`, "/api/codes/lookup", "function assignCode", "function removeCode", "function lookupCode"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %q", want)
+		}
 	}
 }

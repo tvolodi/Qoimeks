@@ -20,6 +20,8 @@ type StockItem struct {
 	Alt    string       `json:"alt,omitempty"`  // code of the second place to look
 	Total  float64      `json:"total"`
 	Places []StockPlace `json:"places"`
+	// Codes are the active codes of the SKU (omitted when it has none).
+	Codes []CatalogCode `json:"codes,omitempty"`
 }
 
 // Stock returns every active SKU, sorted by code, with its current non-zero
@@ -61,5 +63,29 @@ func (s *Store) Stock(ctx context.Context) ([]StockItem, error) {
 			it.Total += p.Qty
 		}
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	pos := make(map[int64]int, len(items))
+	for i := range items {
+		pos[items[i].SKUID] = i
+	}
+	crows, err := s.pool.Query(ctx, `select object_id, id, code_type, code from codes
+		where object_type = $1 and removed_at is null order by created_at, id`, ObjectSKU)
+	if err != nil {
+		return nil, err
+	}
+	defer crows.Close()
+	for crows.Next() {
+		var objID int64
+		var cc CatalogCode
+		if err := crows.Scan(&objID, &cc.ID, &cc.CodeType, &cc.Code); err != nil {
+			return nil, err
+		}
+		if i, ok := pos[objID]; ok {
+			items[i].Codes = append(items[i].Codes, cc)
+		}
+	}
+	return items, crows.Err()
 }
