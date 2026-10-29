@@ -89,12 +89,22 @@ type SKU struct {
 	// LocationID is where the SKU normally lives; AltLocationID is a second place to look.
 	LocationID    *int64 `json:"location_id,omitempty"`
 	AltLocationID *int64 `json:"alt_location_id,omitempty"`
+	// Codes are the active codes of the SKU; only the catalog fills them.
+	Codes []CatalogCode `json:"codes,omitempty"`
+}
+
+// CatalogCode is an active code as the catalog carries it.
+type CatalogCode struct {
+	ID       uuid.UUID `json:"id"`
+	CodeType string    `json:"code_type"`
+	Code     string    `json:"code"`
 }
 
 type Location struct {
-	ID   int64  `json:"id"`
-	Code string `json:"code"`
-	Name string `json:"name"`
+	ID    int64         `json:"id"`
+	Code  string        `json:"code"`
+	Name  string        `json:"name"`
+	Codes []CatalogCode `json:"codes,omitempty"`
 }
 
 type Catalog struct {
@@ -124,7 +134,37 @@ func (s *Store) Catalog(ctx context.Context) (Catalog, error) {
 		var v Location
 		return v, r.Scan(&v.ID, &v.Code, &v.Name)
 	})
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	rows, err = s.pool.Query(ctx, `select object_type, object_id, id, code_type, code from codes
+		where removed_at is null order by created_at, id`)
+	if err != nil {
+		return c, err
+	}
+	defer rows.Close()
+	skus := map[int64]*SKU{}
+	for i := range c.SKUs {
+		skus[c.SKUs[i].ID] = &c.SKUs[i]
+	}
+	locs := map[int64]*Location{}
+	for i := range c.Locations {
+		locs[c.Locations[i].ID] = &c.Locations[i]
+	}
+	for rows.Next() {
+		var typ string
+		var objID int64
+		var cc CatalogCode
+		if err := rows.Scan(&typ, &objID, &cc.ID, &cc.CodeType, &cc.Code); err != nil {
+			return c, err
+		}
+		if typ == ObjectSKU && skus[objID] != nil {
+			skus[objID].Codes = append(skus[objID].Codes, cc)
+		} else if typ == ObjectLocation && locs[objID] != nil {
+			locs[objID].Codes = append(locs[objID].Codes, cc)
+		}
+	}
+	return c, rows.Err()
 }
 
 type Balance struct {
