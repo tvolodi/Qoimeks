@@ -438,16 +438,13 @@ class _CodeAssignScreenState extends State<CodeAssignScreen> {
             ),
             if (_owner != null) ...[
               const SizedBox(height: AppSpace.s2),
-              SizedBox(
-                height: AppSize.touchMin,
-                child: TextButton(
-                  key: const Key('code_open_owner'),
-                  onPressed: _openOwner,
-                  child: Text(
-                    _s(
-                      'code_open_owner',
-                    ).replaceAll('{name}', _ownerName(_owner!)),
-                  ),
+              TextButton(
+                key: const Key('code_open_owner'),
+                style: TextButton.styleFrom(minimumSize: const Size.fromHeight(AppSize.touchMin)),
+                onPressed: _openOwner,
+                child: Text(
+                  _s('code_open_owner').replaceAll('{name}', _ownerName(_owner!)),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ],

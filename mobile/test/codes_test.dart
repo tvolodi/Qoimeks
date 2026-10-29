@@ -38,6 +38,9 @@ http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
 
 /// A stand-in codes server: keeps active codes in memory, refuses a code another item holds.
 class FakeCodes {
+  /// Name of SKU 1 in the catalog (tests set a long one).
+  String nutName = 'Гайка М8';
+
   /// code -> row. 'WASHER' belongs to SKU 2 from the start.
   final rows = <String, Map<String, dynamic>>{
     'WASHER': {
@@ -69,7 +72,7 @@ class FakeCodes {
     if (path == '/api/catalog') {
       return _json({
         'skus': [
-          {'id': 1, 'code': 'NUT-M8', 'name': 'Гайка М8', 'unit': 'шт'},
+          {'id': 1, 'code': 'NUT-M8', 'name': nutName, 'unit': 'шт'},
           {'id': 2, 'code': 'WSH-M8', 'name': 'Шайба М8', 'unit': 'шт'},
         ],
         'locations': [
@@ -122,7 +125,7 @@ class FakeCodes {
         'object_type': b['object_type'],
         'object_id': b['object_id'],
         'object_code': b['object_id'] == 1 ? 'NUT-M8' : 'WSH-M8',
-        'object_name': b['object_id'] == 1 ? 'Гайка М8' : 'Шайба М8',
+        'object_name': b['object_id'] == 1 ? nutName : 'Шайба М8',
         'code_type': b['code_type'],
         'code': b['code'],
       };
@@ -431,6 +434,43 @@ void main() {
         reason: 'stays to scan another',
       );
     });
+
+    testWidgets(
+      '360 px, kk, long item name: worded codes button and offer fit',
+      (tester) async {
+        tester.view.physicalSize = const Size(360 * 3, 2400);
+        tester.view.devicePixelRatio = 3;
+        addTearDown(tester.view.reset);
+        final fake = FakeCodes()
+          ..nutName = 'Гайка шестигранная оцинкованная М8 х 40 усиленная';
+        await tester.pumpWidget(
+          MaterialApp(
+            home: OperationScreen(
+              settings: AppSettings(
+                serverUrl: 'http://server',
+                operator: 'Айгуль',
+                lang: 'kk',
+              ),
+              api: fake.api(),
+              voice: _NoVoice(),
+              scanner: _Scans([const ScanText('4601234567890'), unknown]),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await scanOnce(tester);
+        expect(find.text('Кодтар'), findsOneWidget, reason: 'visible word');
+        expect(
+          tester.getSize(find.byKey(const Key('sku_codes'))).height,
+          greaterThanOrEqualTo(48),
+        );
+        await scanOnce(tester);
+        final offer = find.byKey(const Key('code_assign_offer'));
+        expect(offer, findsOneWidget);
+        expect(tester.getSize(offer).height, greaterThanOrEqualTo(48));
+        expect(tester.takeException(), isNull);
+      },
+    );
 
     testWidgets('the item and location code lists open from the form', (
       tester,

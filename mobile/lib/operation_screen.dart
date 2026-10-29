@@ -201,12 +201,17 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
     }
   }
 
-  /// Opens the codes of a SKU or location. Icon-only (48 px) so the form does not grow taller.
-  Widget _codesButton(String key, String label, String type, int id, String title) => IconButton.outlined(
+  /// Opens the codes of a SKU or location. A short visible word ("Коды") keeps the row on one line;
+  /// the longer [label] is the semantic label.
+  Widget _codesButton(String key, String label, String type, int id, String title) => Semantics(
+        label: label,
+        button: true,
+        excludeSemantics: true,
+        child: OutlinedButton.icon(
         key: Key(key),
-        tooltip: label,
-        constraints: const BoxConstraints(minWidth: AppSize.touchMin, minHeight: AppSize.touchMin),
+        style: OutlinedButton.styleFrom(minimumSize: const Size(AppSize.touchMin, AppSize.touchMin)),
         icon: const Icon(Icons.tag),
+        label: Text(_s('codes_of')),
         onPressed: () => Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => CodesScreen(
             settings: widget.settings,
@@ -217,6 +222,7 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
             scanner: widget.scanner,
           ),
         )),
+        ),
       );
 
   Future<Location?> _pickLocation(String title) {

@@ -190,15 +190,13 @@ class _CodeFindScreenState extends State<CodeFindScreen> {
             ),
             if (widget.assignTo != null && _unknown != null) ...[
               const SizedBox(height: AppSpace.s2),
-              SizedBox(
-                height: AppSize.touchMin,
-                child: FilledButton(
-                  key: const Key('code_assign_offer'),
-                  onPressed: _busy ? null : _assign,
-                  child: Text(
-                    _s('code_assign_offer').replaceAll('{name}', widget.assignTo!.name),
-                    textAlign: TextAlign.center,
-                  ),
+              FilledButton(
+                key: const Key('code_assign_offer'),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(AppSize.touchMin)),
+                onPressed: _busy ? null : _assign,
+                child: Text(
+                  _s('code_assign_offer').replaceAll('{name}', widget.assignTo!.name),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ],
