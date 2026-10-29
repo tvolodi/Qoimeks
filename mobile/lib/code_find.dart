@@ -120,7 +120,14 @@ class _CodeFindScreenState extends State<CodeFindScreen> {
             child: OutlinedButton(
               key: const Key('code_find'),
               onPressed: _busy ? null : _lookup,
-              child: Text(_s('code_find')),
+              child: _busy
+                  ? const SizedBox(
+                      key: Key('code_busy'),
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(_s('code_find')),
             ),
           ),
           if (_banner != null) ...[

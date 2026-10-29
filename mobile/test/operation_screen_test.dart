@@ -142,6 +142,18 @@ void main() {
     expect(find.byKey(const Key('code_input')), findsNothing);
   });
 
+  testWidgets('the form has a worded find-by-code button that opens the find screen', (tester) async {
+    await pumpForm(tester, FakeServer());
+    final button = find.byKey(const Key('find_by_code_button'));
+    expect(button, findsOneWidget);
+    expect(find.descendant(of: button, matching: find.text('Найти по коду')), findsOneWidget);
+    expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('code_input')), findsOneWidget);
+  });
+
   testWidgets('scanning a location code fills the location, not the item', (tester) async {
     await pumpForm(tester, FakeServer(), scanner: _Scan(const ScanText('LOC-A01')));
     await findByCode(tester);

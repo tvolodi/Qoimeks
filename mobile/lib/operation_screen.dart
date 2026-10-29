@@ -518,6 +518,16 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
           code: _sku?.code,
           onTap: _pickSku,
         ),
+        if (_catalog != null) ...[
+          const SizedBox(height: AppSpace.s2),
+          OutlinedButton.icon(
+            key: const Key('find_by_code_button'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            icon: const Icon(Icons.qr_code_scanner),
+            label: Text(_s('find_by_code'), textAlign: TextAlign.center),
+            onPressed: _findByCode,
+          ),
+        ],
         if (_candidates.isNotEmpty) ...[
           const SizedBox(height: AppSpace.s2),
           StatusBanner(kind: StatusKind.warning, text: _s('which_sku')),
