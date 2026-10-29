@@ -255,7 +255,7 @@ func (s *Server) serveDevice(w http.ResponseWriter, r *http.Request, next http.H
 		storeError(w, r, err)
 		return
 	}
-	if err := s.Store.TouchDevice(r.Context(), d.ID, r.Header.Get("X-App-Version"), s.clock(), deviceTouchEvery); err != nil {
+	if err := s.Store.TouchDevice(r.Context(), d.ID, appHeader(r, "X-App-Version", pairingMaxVersion), s.clock(), deviceTouchEvery); err != nil {
 		slog.Warn("device last_seen update failed", "err", err)
 	}
 	s.serveTenant(w, r, next, t)

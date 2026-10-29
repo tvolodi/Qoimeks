@@ -143,3 +143,42 @@ func TestMappedSharedTokenUnchangedByDeviceBranch(t *testing.T) {
 		t.Fatalf("tenant code sees %q", got)
 	}
 }
+
+// The app percent-encodes X-App-Version; the device list shows it decoded, trimmed and
+// cut to the exchange's limit, and a call without the header keeps the stored version.
+func TestDeviceTouchStoresDecodedAppVersion(t *testing.T) {
+	cases := []struct{ name, header, want string }{
+		{"encoded", "0.3.1%2B7", "0.3.1+7"},
+		{"spaces", "  0.3.2  ", "0.3.2"},
+		{"too long", strings.Repeat("9", 300), strings.Repeat("9", pairingMaxVersion)},
+		{"missing", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, base, _, tn := pairSetup(t)
+			id, key := pairViaExchange(t, base, tn)
+			var header map[string]string
+			if c.header != "" {
+				header = map[string]string{"X-App-Version": c.header}
+			}
+			send(t, "GET", base+"/api/catalog", key, header, "", nil, 200)
+			if got := deviceByID(t, base, tn, id).AppVersion; got != c.want {
+				t.Fatalf("app_version %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestDeviceTouchWithoutHeaderKeepsPairedVersion(t *testing.T) {
+	_, base, _, tn := pairSetup(t)
+	pb := newPairingCode(t, base, tn.TenantID)
+	res := exchange(t, base, "", map[string]string{"code": pb.Code, "device_label": "phone", "app_version": "0.3.1+7"})
+	if res.status != 200 {
+		t.Fatalf("exchange: %d %s", res.status, res.raw)
+	}
+	id, key := res.body["device_id"].(string), res.body["device_key"].(string)
+	call(t, "GET", base+"/api/catalog", key, nil, 200, nil)
+	if got := deviceByID(t, base, tn, id).AppVersion; got != "0.3.1+7" {
+		t.Fatalf("app_version %q, want the paired 0.3.1+7", got)
+	}
+}

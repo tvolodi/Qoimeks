@@ -17,6 +17,7 @@ import (
 
 const (
 	pairingMaxLabel   = 80
+	pairingMaxVersion = 50
 	pairingMinTTL     = 60
 	pairingMaxTTL     = 900
 	pairingRespLayout = time.RFC3339
