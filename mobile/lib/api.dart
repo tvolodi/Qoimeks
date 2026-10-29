@@ -138,6 +138,36 @@ class Draft {
   final double? qty;
 }
 
+/// What the pairing exchange returns. The key is shown once by the server; it is never printed.
+class PairResult {
+  const PairResult({
+    required this.deviceId,
+    required this.deviceKey,
+    required this.tenantName,
+    required this.tenantLanguage,
+  });
+
+  factory PairResult.fromJson(Map<String, dynamic> j) {
+    final tenant = j['tenant'];
+    final key = j['device_key'];
+    if (key is! String || key.isEmpty) throw const FormatException('no device key');
+    return PairResult(
+      deviceId: '${j['device_id'] ?? ''}',
+      deviceKey: key,
+      tenantName: tenant is Map ? '${tenant['name'] ?? ''}' : '',
+      tenantLanguage: tenant is Map ? '${tenant['language'] ?? ''}' : '',
+    );
+  }
+
+  final String deviceId;
+  final String deviceKey;
+  final String tenantName;
+  final String tenantLanguage;
+
+  @override
+  String toString() => 'PairResult(deviceId: $deviceId, tenant: $tenantName, key: ***)';
+}
+
 class ApiException implements Exception {
   const ApiException(this.status, this.message, {this.source});
 
@@ -235,6 +265,37 @@ class ApiClient {
 
   /// A problem report. Not observed: its own failure is neither logged nor a reason to retry.
   Future<void> postFeedback(Map<String, dynamic> report) => _post('/api/feedback', report, observe: false);
+
+  /// Exchanges a pairing code for this phone's own device key (`POST /pair/v1/exchange`).
+  /// Sent without Authorization (the phone has no credential yet) and not observed: the code
+  /// and the key are never logged. A wrong, used or expired code is ApiException(400,
+  /// 'invalid_pairing_code'); a rate limit is 429 'rate_limited'.
+  Future<PairResult> pairExchange({
+    required String code,
+    required String deviceLabel,
+    String operator = '',
+    String appVersion = '',
+  }) async {
+    final j = await _send(
+      () async => _http.post(
+        Uri.parse('$_base/pair/v1/exchange'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'code': code,
+          'device_label': deviceLabel,
+          if (operator.trim().isNotEmpty) 'operator': operator.trim(),
+          if (appVersion.isNotEmpty) 'app_version': appVersion,
+        }),
+      ),
+      path: '/pair/v1/exchange',
+      observe: false,
+    );
+    try {
+      return PairResult.fromJson(j as Map<String, dynamic>);
+    } catch (_) {
+      throw const ApiException(0, 'bad pairing response');
+    }
+  }
 
   Future<Catalog> catalog() async {
     final j = await _get('/api/catalog');
