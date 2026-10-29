@@ -35,6 +35,9 @@ type Pairing struct {
 	Label     string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+	// UsedAt and CancelledAt are set only by PairingByID.
+	UsedAt      *time.Time
+	CancelledAt *time.Time
 }
 
 // Device is one paired phone. The key is not stored, only its hash.
@@ -234,4 +237,24 @@ func (s *Store) TouchDevice(ctx context.Context, deviceID uuid.UUID, appVersion 
 		  and (last_seen_at is null or last_seen_at <= $2::timestamptz - $4::float8 * interval '1 second')`,
 		deviceID, now, appVersion, minAge.Seconds())
 	return err
+}
+
+// PairingByID returns a pairing code row of the tenant, or ErrNotFound for an unknown one
+// or one of another tenant.
+func (s *Store) PairingByID(ctx context.Context, tenantID, pairingID uuid.UUID) (Pairing, error) {
+	var p Pairing
+	err := s.pool.QueryRow(ctx, `
+		select pairing_id, tenant_id, label, created_at, expires_at, used_at, cancelled_at
+		from device_pairings where pairing_id = $1 and tenant_id = $2`, pairingID, tenantID).
+		Scan(&p.ID, &p.TenantID, &p.Label, &p.CreatedAt, &p.ExpiresAt, &p.UsedAt, &p.CancelledAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Pairing{}, ErrNotFound
+	}
+	return p, err
+}
+
+// DeviceOf returns a device of the tenant, or ErrNotFound for an unknown one or one of
+// another tenant.
+func (s *Store) DeviceOf(ctx context.Context, tenantID, deviceID uuid.UUID) (Device, error) {
+	return scanDevice(s.pool.QueryRow(ctx, `select `+deviceColumns+` from devices where device_id = $1 and tenant_id = $2`, deviceID, tenantID))
 }
