@@ -168,6 +168,32 @@ class PairResult {
   String toString() => 'PairResult(deviceId: $deviceId, tenant: $tenantName, key: ***)';
 }
 
+/// What a code points to (`GET /api/codes/lookup`): a SKU or a location, with its own code and name.
+class CodeInfo {
+  const CodeInfo({
+    required this.objectType,
+    required this.objectId,
+    required this.objectCode,
+    required this.objectName,
+    required this.code,
+  });
+
+  factory CodeInfo.fromJson(Map<String, dynamic> j) => CodeInfo(
+        objectType: j['object_type'],
+        objectId: j['object_id'],
+        objectCode: j['object_code'] ?? '',
+        objectName: j['object_name'] ?? '',
+        code: j['code'] ?? '',
+      );
+
+  /// 'sku' or 'location'.
+  final String objectType;
+  final int objectId;
+  final String objectCode;
+  final String objectName;
+  final String code;
+}
+
 class ApiException implements Exception {
   const ApiException(this.status, this.message, {this.source, this.reason});
 
@@ -309,6 +335,18 @@ class ApiClient {
       skus: [for (final s in j['skus'] as List) Sku.fromJson(s)],
       locations: [for (final l in j['locations'] as List) Location.fromJson(l)],
     );
+  }
+
+  /// The item or location a scanned or typed [code] belongs to, or null when no item has it.
+  /// Matching is exact (case-sensitive) on the server.
+  Future<CodeInfo?> lookupCode(String code) async {
+    try {
+      final j = await _get('/api/codes/lookup?code=${Uri.encodeQueryComponent(code)}');
+      return CodeInfo.fromJson(j as Map<String, dynamic>);
+    } on ApiException catch (e) {
+      if (e.status == 404 && e.reason == 'code_not_found') return null;
+      rethrow;
+    }
   }
 
   /// Current non-zero balances of one SKU, by location.

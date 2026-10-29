@@ -35,29 +35,36 @@ abstract class QrScanner {
 }
 
 class CameraQrScanner implements QrScanner {
-  const CameraQrScanner();
+  /// [anyBarcode] reads every common barcode format (to find an item); the default reads QR codes only.
+  const CameraQrScanner({this.anyBarcode = false});
+
+  final bool anyBarcode;
 
   @override
   Future<ScanResult> scan(BuildContext context, Strings s) async {
     final result = await Navigator.of(context).push<ScanResult>(
-      MaterialPageRoute(builder: (_) => ScannerPage(title: s('qr_scan_title'))),
+      MaterialPageRoute(builder: (_) => ScannerPage(
+          title: s(anyBarcode ? 'code_scan_title' : 'qr_scan_title'),
+          anyBarcode: anyBarcode,
+        ),),
     );
     return result ?? const ScanCancelled();
   }
 }
 
 class ScannerPage extends StatefulWidget {
-  const ScannerPage({super.key, required this.title});
+  const ScannerPage({super.key, required this.title, this.anyBarcode = false});
 
   final String title;
+  final bool anyBarcode;
 
   @override
   State<ScannerPage> createState() => _ScannerPageState();
 }
 
 class _ScannerPageState extends State<ScannerPage> {
-  final _controller = MobileScannerController(
-    formats: const [BarcodeFormat.qrCode],
+  late final _controller = MobileScannerController(
+    formats: widget.anyBarcode ? const [] : const [BarcodeFormat.qrCode],
   );
   bool _done = false;
 

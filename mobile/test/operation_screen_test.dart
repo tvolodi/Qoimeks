@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:qoimeks/api.dart';
 import 'package:qoimeks/l10n.dart';
 import 'package:qoimeks/operation_screen.dart';
+import 'package:qoimeks/qr_scanner.dart';
 import 'package:qoimeks/settings.dart';
 import 'package:qoimeks/voice.dart';
 
@@ -60,6 +61,15 @@ class FakeServer {
           'skus': [_nut8, _nut10],
           'locations': [_a01, _b02],
         });
+      case '/api/codes/lookup':
+        final code = req.url.queryParameters['code'];
+        if (code == '4601234567890') {
+          return _json({'id': 'c1', 'object_type': 'sku', 'object_id': 1, 'object_code': 'NUT-M8', 'object_name': 'Гайка М8', 'code': code});
+        }
+        if (code == 'LOC-A01') {
+          return _json({'id': 'c2', 'object_type': 'location', 'object_id': 11, 'object_code': 'B-02', 'object_name': 'Ряд B', 'code': code});
+        }
+        return _json({'error': 'not found', 'reason': 'code_not_found', 'code': code}, 404);
       case '/api/balances':
         return _json(balances);
       case '/api/voice':
@@ -85,7 +95,15 @@ class FakeServer {
   });
 }
 
-Future<void> pumpForm(WidgetTester tester, FakeServer server) async {
+class _Scan implements QrScanner {
+  _Scan(this.result);
+  final ScanResult result;
+
+  @override
+  Future<ScanResult> scan(BuildContext context, Strings s) async => result;
+}
+
+Future<void> pumpForm(WidgetTester tester, FakeServer server, {QrScanner? scanner}) async {
   tester.view.physicalSize = const Size(1080, 2400);
   tester.view.devicePixelRatio = 2.5;
   addTearDown(tester.view.reset);
@@ -94,6 +112,7 @@ Future<void> pumpForm(WidgetTester tester, FakeServer server) async {
       settings: AppSettings(serverUrl: 'http://server', operator: 'Айгуль'),
       api: ApiClient('http://server', accessCode: 'code-1', client: server.client),
       voice: FakeVoice(),
+      scanner: scanner ?? _Scan(const ScanCancelled()),
     ),
   ));
   await tester.pumpAndSettle();
@@ -108,6 +127,45 @@ void main() {
     await tester.tap(find.text('Гайка М8'));
     await tester.pumpAndSettle();
   }
+
+  Future<void> findByCode(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('find_by_code')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('code_scan')));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('scanning a known SKU code fills the item field', (tester) async {
+    await pumpForm(tester, FakeServer(), scanner: _Scan(const ScanText('4601234567890')));
+    await findByCode(tester);
+    expect(find.text('Гайка М8'), findsOneWidget);
+    expect(find.byKey(const Key('code_input')), findsNothing);
+  });
+
+  testWidgets('the form has a worded find-by-code button that opens the find screen', (tester) async {
+    await pumpForm(tester, FakeServer());
+    final button = find.byKey(const Key('find_by_code_button'));
+    expect(button, findsOneWidget);
+    expect(find.descendant(of: button, matching: find.text('Найти по коду')), findsOneWidget);
+    expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('code_input')), findsOneWidget);
+  });
+
+  testWidgets('scanning a location code fills the location, not the item', (tester) async {
+    await pumpForm(tester, FakeServer(), scanner: _Scan(const ScanText('LOC-A01')));
+    await findByCode(tester);
+    expect(find.text('B-02'), findsOneWidget);
+    expect(find.text('Гайка М8'), findsNothing);
+  });
+
+  testWidgets('an unknown code leaves the form alone and says nothing found', (tester) async {
+    await pumpForm(tester, FakeServer(), scanner: _Scan(const ScanText('4600000000000')));
+    await findByCode(tester);
+    expect(find.descendant(of: find.byKey(const Key('code_banner')), matching: find.textContaining('4600000000000')), findsOneWidget);
+  });
 
   testWidgets('a location without a balance row says there is no stock, not 0', (tester) async {
     final server = FakeServer()
