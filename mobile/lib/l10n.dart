@@ -59,6 +59,19 @@ const _ru = {
   'update_up_to_date': 'Установлена последняя версия',
   'update_check_failed': 'Не удалось проверить обновления',
   'scan_qr': 'Сканировать QR',
+  'pair_title': 'Подключение по коду',
+  'pair_code': 'Код подключения',
+  'pair_connect': 'Подключить',
+  'pair_status': 'Подключено как «{label}»',
+  'pair_status_plain': 'Телефон подключён по коду',
+  'pair_insecure': 'Адрес без шифрования (http): код и ключ уходят по сети открыто. Используйте только в своей сети',
+  'pair_err_code': 'Код неверный, уже использован или истёк. Попросите новый код',
+  'pair_err_wait': 'Слишком много попыток. Подождите несколько минут и попробуйте снова',
+  'pair_err_tenant': 'Сервер сейчас недоступен для этой организации. Обратитесь к администратору',
+  'pair_err_network': 'Нет связи с сервером. Ничего не потеряно, попробуйте ещё раз',
+  'pair_err_server': 'Не удалось подключиться',
+  'device_revoked': 'Этот телефон отключён от сервера. Подключите его заново с новым кодом',
+  'pair_again': 'Подключить заново',
   'qr_scan_title': 'Наведите камеру на QR-код',
   'qr_invalid': 'Это не QR-код настройки Qoimeks. Данные не изменены',
   'qr_filled': 'Данные подставлены. Нажмите «Сохранить»',
@@ -141,6 +154,19 @@ const _kk = {
   'update_up_to_date': 'Соңғы нұсқа орнатылған',
   'update_check_failed': 'Жаңартуларды тексеру мүмкін болмады',
   'scan_qr': 'QR сканерлеу',
+  'pair_title': 'Код арқылы қосылу',
+  'pair_code': 'Қосылу коды',
+  'pair_connect': 'Қосылу',
+  'pair_status': '«{label}» ретінде қосылды',
+  'pair_status_plain': 'Телефон код арқылы қосылған',
+  'pair_insecure': 'Мекенжай шифрланбаған (http): код пен кілт желі арқылы ашық жіберіледі. Тек өз желіңізде пайдаланыңыз',
+  'pair_err_code': 'Код қате, қолданылған немесе мерзімі өткен. Жаңа код сұраңыз',
+  'pair_err_wait': 'Әрекет тым көп. Бірнеше минут күтіп, қайталаңыз',
+  'pair_err_tenant': 'Сервер қазір бұл ұйым үшін қолжетімсіз. Әкімшіге хабарласыңыз',
+  'pair_err_network': 'Сервермен байланыс жоқ. Ештеңе жоғалған жоқ, қайталап көріңіз',
+  'pair_err_server': 'Қосылу мүмкін болмады',
+  'device_revoked': 'Бұл телефон серверден ажыратылды. Жаңа кодпен қайта қосыңыз',
+  'pair_again': 'Қайта қосу',
   'qr_scan_title': 'Камераны QR-кодқа бағыттаңыз',
   'qr_invalid': 'Бұл Qoimeks баптау QR-коды емес. Деректер өзгертілген жоқ',
   'qr_filled': 'Деректер енгізілді. «Сақтау» түймесін басыңыз',
@@ -175,6 +201,18 @@ class Strings {
 
   String kind(String kind) => call('kind_$kind');
 
+  /// A message for a failed pairing exchange; nothing here says whether the code ever existed.
+  String pairError(Object e) {
+    if (e is! ApiException) return call('pair_err_server');
+    return switch ((e.status, e.message)) {
+      (0, _) => call('pair_err_network'),
+      (429, _) => call('pair_err_wait'),
+      (400, 'invalid_pairing_code') => call('pair_err_code'),
+      (403, 'tenant_unavailable') => call('pair_err_tenant'),
+      _ => call('pair_err_server'),
+    };
+  }
+
   /// A message an operator can act on, for any failed server call.
   String error(Object e) {
     if (e is! ApiException) return '${call('err_generic')}: $e';
@@ -182,6 +220,7 @@ class Strings {
     if (e.source == 'llm') return call('err_llm_down');
     return switch (e.status) {
       0 => call('err_network'),
+      401 when e.isDeviceRevoked => call('device_revoked'),
       401 => call('err_access'),
       409 => call('err_already_posted'),
       422 => call('err_silence'),

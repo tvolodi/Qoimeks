@@ -94,6 +94,10 @@ void main() {
     final f = make(settings, server);
     await f.logError('catalog failed', where: 'operation');
 
+    // The form got longer with the pairing section: a taller screen keeps Save and the version in view.
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(MaterialApp(home: SettingsScreen(settings: settings, feedback: f)));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const Key('report_problem')));
@@ -123,6 +127,10 @@ void main() {
     final settings = AppSettings(serverUrl: 'http://server', operator: 'Айгуль', lang: 'kk');
     final server = FakeFeedbackServer()..up = false;
     final f = make(settings, server);
+    // The form got longer with the pairing section: a taller screen keeps Save and the version in view.
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(MaterialApp(home: SettingsScreen(settings: settings, feedback: f)));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const Key('report_problem')));
