@@ -155,6 +155,8 @@ func parse(f *excelize.File, sheet string) (*Result, error) {
 	bySKU := map[string]int{} // code -> index in res.SKUs
 
 	started := false
+	barcodeCol := -1                    // column of the optional "Штрихкод" header, -1 if the sheet has none
+	barcodeOwner := map[string]string{} // code from the file -> article that holds it
 	for i, r := range rows {
 		n := i + 1
 		cell := func(c int) string {
@@ -165,6 +167,14 @@ func parse(f *excelize.File, sheet string) (*Result, error) {
 		}
 		if !started {
 			started = cell(0) == "Артикул"
+			if started {
+				for c := range r {
+					if cell(c) == "Штрихкод" {
+						barcodeCol = c
+						break
+					}
+				}
+			}
 			continue
 		}
 		code, name := cell(0), cell(1)
@@ -213,12 +223,39 @@ func parse(f *excelize.File, sheet string) (*Result, error) {
 		if home != "" && !unclear {
 			sku.Stock = []store.ImportStock{{Location: home, Qty: qty, Row: n}}
 		}
+		barcode := ""
+		if barcodeCol >= 0 {
+			barcode = cell(barcodeCol)
+			if other, taken := barcodeOwner[barcode]; barcode != "" && taken && other != code {
+				warn(n, "%s: код %q уже указан у артикула %s, пропущен", code, barcode, other)
+				barcode = ""
+			} else if barcode != "" {
+				barcodeOwner[barcode] = code
+			}
+		}
+		sku.Barcode, sku.BarcodeRow = barcode, n
+		if barcode == "" {
+			sku.BarcodeRow = 0
+		}
 		// A name that begins with the article is the bookkeepers' own sign of which goods a row means.
 		namedByCode := func(name string) bool { return strings.HasPrefix(strings.ToUpper(name), strings.ToUpper(code)) }
 
 		if idx, seen := bySKU[code]; seen {
 			first := &res.SKUs[idx]
 			first.KeepBalances = first.KeepBalances || unclear
+			switch {
+			case barcode == "" || barcode == first.Barcode:
+			case first.Barcode == "":
+				first.Barcode, first.BarcodeRow = barcode, n
+			default:
+				dup := false
+				for _, b := range first.MoreBarcodes {
+					dup = dup || b == barcode
+				}
+				if !dup {
+					first.MoreBarcodes = append(first.MoreBarcodes, barcode)
+				}
+			}
 			same := strings.EqualFold(first.Name, name) || (namedByCode(first.Name) && namedByCode(name))
 			if !same {
 				other := name
