@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -94,6 +95,8 @@ type Server struct {
 	// Maintenance, when true, answers every state-changing request (POST, PUT, PATCH,
 	// DELETE) with 503 and Retry-After; reads, /healthz and CORS preflight keep working.
 	Maintenance bool
+	// TrustedProxies are the ranges whose X-Real-IP is believed by clientIP (TRUSTED_PROXY_CIDRS).
+	TrustedProxies []netip.Prefix
 
 	now     func() time.Time // tests replace the clock of the admin rate limiter
 	mu      sync.Mutex
