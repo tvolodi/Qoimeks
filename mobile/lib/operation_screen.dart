@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import 'api.dart';
 import 'code_find.dart';
+import 'codes.dart';
 import 'qr_scanner.dart';
 import 'design/status.dart';
 import 'design/theme.dart';
@@ -174,7 +175,9 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
   /// Opens "find by code" and fills the SKU or the location field with what the code points to.
   Future<void> _findByCode() async {
     final found = await Navigator.of(context).push<CodeInfo>(MaterialPageRoute(
-      builder: (_) => CodeFindScreen(settings: widget.settings, api: widget.api, scanner: widget.scanner),
+      builder: (_) => CodeFindScreen(settings: widget.settings, api: widget.api, scanner: widget.scanner,
+        assignTo: _sku == null ? null : AssignTarget(objectType: 'sku', objectId: _sku!.id, name: _sku!.name),
+      ),
     ));
     final catalog = _catalog;
     if (found == null || !mounted || catalog == null) return;
@@ -197,6 +200,24 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
       _toast(_s('code_found_location').replaceAll('{name}', loc.code), StatusKind.success);
     }
   }
+
+  /// Opens the codes of a SKU or location. Icon-only (48 px) so the form does not grow taller.
+  Widget _codesButton(String key, String label, String type, int id, String title) => IconButton.outlined(
+        key: Key(key),
+        tooltip: label,
+        constraints: const BoxConstraints(minWidth: AppSize.touchMin, minHeight: AppSize.touchMin),
+        icon: const Icon(Icons.tag),
+        onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => CodesScreen(
+            settings: widget.settings,
+            api: widget.api,
+            objectType: type,
+            objectId: id,
+            title: title,
+            scanner: widget.scanner,
+          ),
+        )),
+      );
 
   Future<Location?> _pickLocation(String title) {
     return pick<Location>(
@@ -520,13 +541,21 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
         ),
         if (_catalog != null) ...[
           const SizedBox(height: AppSpace.s2),
-          OutlinedButton.icon(
-            key: const Key('find_by_code_button'),
-            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-            icon: const Icon(Icons.qr_code_scanner),
-            label: Text(_s('find_by_code'), textAlign: TextAlign.center),
-            onPressed: _findByCode,
-          ),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                key: const Key('find_by_code_button'),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                icon: const Icon(Icons.qr_code_scanner),
+                label: Text(_s('find_by_code'), textAlign: TextAlign.center),
+                onPressed: _findByCode,
+              ),
+            ),
+            if (_sku != null) ...[
+              const SizedBox(width: AppSpace.s2),
+              _codesButton('sku_codes', _s('item_codes'), 'sku', _sku!.id, _sku!.name),
+            ],
+          ]),
         ],
         if (_candidates.isNotEmpty) ...[
           const SizedBox(height: AppSpace.s2),
@@ -552,7 +581,8 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
           ),
         ],
         gap,
-        PickerField(
+        Row(children: [
+          Expanded(child: PickerField(
           key: const Key('location'),
           label: _s(_kind == 'transfer' ? 'from' : 'location'),
           text: _location?.code,
@@ -565,7 +595,12 @@ class _OperationScreenState extends State<OperationScreen> with WidgetsBindingOb
               });
             }
           },
-        ),
+        )),
+          if (_location != null) ...[
+            const SizedBox(width: AppSpace.s2),
+            _codesButton('location_codes', _s('location_codes'), 'location', _location!.id, _location!.code),
+          ],
+        ]),
         if (_kind == 'transfer') ...[
           gap,
           PickerField(
