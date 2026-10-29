@@ -134,6 +134,15 @@ void main() {
     expect(find.text('Есть в: B-02 (40)'), findsOneWidget);
   });
 
+  testWidgets('the SKU list shows the unit in brackets after the code, never after a dot', (tester) async {
+    await pumpForm(tester, FakeServer());
+    await tester.tap(find.byKey(const Key('sku')));
+    await tester.pumpAndSettle();
+    expect(find.text('NUT-M8 (шт)'), findsOneWidget);
+    expect(find.text('NUT-M10 (шт)'), findsOneWidget);
+    expect(find.textContaining('·'), findsNothing);
+  });
+
   testWidgets('an operation can be entered entirely by hand', (tester) async {
     final server = FakeServer();
     await pumpForm(tester, server);
