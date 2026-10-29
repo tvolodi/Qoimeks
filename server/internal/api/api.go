@@ -209,6 +209,10 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 			s.serveTenant(w, r, next, t)
 			return
 		}
+		if key, ok := strings.CutPrefix(got, "Bearer "); ok && !isDefault && strings.HasPrefix(key, store.DeviceKeyPrefix) {
+			s.serveDevice(w, r, next, key)
+			return
+		}
 		if code, ok := strings.CutPrefix(got, "Bearer "); ok && code != "" && !isDefault {
 			t, err := s.Store.TenantByCode(r.Context(), code)
 			switch {
@@ -226,6 +230,35 @@ func (s *Server) requireToken(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// deviceTouchEvery is the least time between two last_seen_at writes of one device.
+const deviceTouchEvery = 5 * time.Minute
+
+// serveDevice authenticates a paired phone's key (docs/pairing-design.md, section 3.4).
+// A revoked key is 401 with reason device_revoked; an unknown one gets the usual 401.
+func (s *Server) serveDevice(w http.ResponseWriter, r *http.Request, next http.Handler, key string) {
+	d, err := s.Store.DeviceByKey(r.Context(), key)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusUnauthorized, "access code is missing or wrong")
+		return
+	case err != nil:
+		storeError(w, r, err)
+		return
+	case d.RevokedAt != nil:
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "device revoked", "reason": "device_revoked"})
+		return
+	}
+	t, err := s.Store.Tenant(r.Context(), d.TenantID)
+	if err != nil {
+		storeError(w, r, err)
+		return
+	}
+	if err := s.Store.TouchDevice(r.Context(), d.ID, appHeader(r, "X-App-Version", pairingMaxVersion), s.clock(), deviceTouchEvery); err != nil {
+		slog.Warn("device last_seen update failed", "err", err)
+	}
+	s.serveTenant(w, r, next, t)
 }
 
 // serveTenant applies the tenant's status rules and serves the request from its schema.

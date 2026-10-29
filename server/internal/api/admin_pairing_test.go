@@ -24,6 +24,7 @@ type deviceBody struct {
 	DeviceID   string  `json:"device_id"`
 	Label      string  `json:"label"`
 	Operator   string  `json:"operator"`
+	AppVersion string  `json:"app_version"`
 	CreatedAt  string  `json:"created_at"`
 	LastSeenAt *string `json:"last_seen_at"`
 	RevokedAt  *string `json:"revoked_at"`

@@ -58,7 +58,7 @@ func (s *Server) pairExchange(w http.ResponseWriter, r *http.Request, limiter *k
 	case in.Code == "" || in.DeviceLabel == "":
 		writeAdminError(w, http.StatusBadRequest, "invalid_request", "code and device_label are required")
 		return
-	case len([]rune(in.DeviceLabel)) > pairingMaxLabel, len([]rune(in.Operator)) > pairingMaxLabel, len(in.AppVersion) > 50:
+	case len([]rune(in.DeviceLabel)) > pairingMaxLabel, len([]rune(in.Operator)) > pairingMaxLabel, len(in.AppVersion) > pairingMaxVersion:
 		writeAdminError(w, http.StatusBadRequest, "invalid_request", "device_label, operator or app_version is too long")
 		return
 	}

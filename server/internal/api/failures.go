@@ -25,6 +25,19 @@ func isServerFailure(err error) bool {
 	return !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrConflict) && !errors.Is(err, store.ErrInvalid)
 }
 
+// appHeader returns a header the app sends about itself (X-App-Version, X-Device, ...):
+// trimmed, percent-decoded and cut to limit runes.
+func appHeader(r *http.Request, name string, limit int) string {
+	v := strings.TrimSpace(r.Header.Get(name))
+	if u, err := url.PathUnescape(v); err == nil { // the app percent-encodes, headers cannot carry Cyrillic
+		v = u
+	}
+	if utf8.RuneCountInString(v) > limit {
+		v = string([]rune(v)[:limit])
+	}
+	return v
+}
+
 // recordFailure appends a feedback row for a failure the user did not report: kind is
 // speech_error, llm_error or post_error. It goes to the schema of the request's tenant.
 // At most one row per (schema, kind, provider) is appended per failureWindow; rows are
@@ -45,16 +58,7 @@ func (s *Server) recordFailure(r *http.Request, kind, provider string, cause err
 	s.failMu.Unlock()
 
 	d := s.newRedactor(r)
-	header := func(name string) string {
-		v := strings.TrimSpace(r.Header.Get(name))
-		if u, err := url.PathUnescape(v); err == nil { // the app percent-encodes, headers cannot carry Cyrillic
-			v = u
-		}
-		if utf8.RuneCountInString(v) > maxFeedbackField {
-			v = string([]rune(v)[:maxFeedbackField])
-		}
-		return d.str(v)
-	}
+	header := func(name string) string { return d.str(appHeader(r, name, maxFeedbackField)) }
 	msg := d.str(cause.Error())
 	class := fmt.Sprintf("%T", cause)
 	details, _ := json.Marshal([]map[string]string{{"class": class, "message": msg}})
