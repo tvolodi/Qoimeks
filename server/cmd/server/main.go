@@ -52,6 +52,12 @@ func main() {
 		ProvisioningToken: os.Getenv("PROVISIONING_TOKEN"),
 		PublicURL:         os.Getenv("PUBLIC_URL"),
 	}
+	trusted, err := api.ParseTrustedProxies(os.Getenv("TRUSTED_PROXY_CIDRS"))
+	if err != nil {
+		slog.Error("cannot start", "err", err)
+		os.Exit(1)
+	}
+	srv.TrustedProxies = trusted
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("MAINTENANCE_MODE"))) {
 	case "1", "true", "on", "yes":
 		srv.Maintenance = true
