@@ -228,6 +228,16 @@ tenant at most, 10 minutes by default; refused with 409 for a suspended or expir
 `POST .../pairings/{pairing_id}/cancel`, `GET .../devices` and `POST .../devices/{device_id}/revoke`.
 A pairing or device of another tenant answers 404. The code is shown only in the create response.
 
+The phone exchanges the code with the public `POST /pair/v1/exchange` (no bearer; exists only when
+`PROVISIONING_TOKEN` is set; the web build may call it, CORS allows it). Body:
+`{"code","device_label","operator","app_version"}`; the code may be typed in lower case, with spaces or
+without the hyphen. `200` returns `device_id`, `device_key` (`qdk_...`, shown once) and the tenant name and
+language. Wrong, used, expired and cancelled codes all answer the same `400 invalid_pairing_code`;
+a suspended or expired tenant answers `403 tenant_unavailable` (the code is spent); a tenant with 50
+devices answers `409 too_many_devices` (the code stays usable). Limits per client address (see
+`TRUSTED_PROXY_CIDRS`): 10 failures and 30 attempts per 10 minutes, and 300 failures for the whole server;
+beyond them `429 rate_limited` with `Retry-After`. Counters are in memory and reset on restart.
+
 Notes for developers:
 - With an empty `ACCESS_TOKEN` the default schema stays open to any request, as before; a tenant
   is chosen only by an exact match of its access code.
