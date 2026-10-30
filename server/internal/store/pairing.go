@@ -193,9 +193,10 @@ func (s *Store) ExchangePairing(ctx context.Context, rawCode string, info Device
 		if key, err = NewDeviceKey(); err != nil {
 			return err
 		}
-		label := info.Label
+		// The person who created the pairing named the phone; the app's label is the fallback.
+		label := pLabel
 		if label == "" {
-			label = pLabel
+			label = info.Label
 		}
 		d, err = scanDevice(tx.QueryRow(ctx, `
 			insert into devices (device_id, tenant_id, key_hash, label, operator, app_version, pairing_id, created_at)

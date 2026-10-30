@@ -75,7 +75,7 @@ Request (all fields optional):
 ```json
 {"label":"Warehouse phone 2","ttl_seconds":600}
 ```
-`label` ≤ 80 characters, shown later in the device list as the suggested name; `ttl_seconds` 60–900, default 600.
+`label` ≤ 80 characters, the name of the phone: a device paired with this code keeps it in the device list; `ttl_seconds` 60–900, default 600.
 
 Response `201`:
 ```json
@@ -113,12 +113,13 @@ Request:
 {"code":"k7m2 9qxa","device_label":"Samsung A15","operator":"Aidar","app_version":"0.2.0"}
 ```
 `code` is normalised (section 4), so typed lowercase, spaces or a missing hyphen work. `device_label` ≤ 80 (the app
-sends the same model string as `X-Device`); `operator` ≤ 80 and optional (a label, like everywhere).
+sends the same model string as `X-Device`; the device takes it as its label only when the pairing had none); `operator` ≤ 80 and optional (a label, like everywhere).
 
 Response `200`:
 ```json
 {"device_id":"7a1b3c5d-0000-4000-8000-000000000002",
  "device_key":"qdk_FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE",
+ "label":"Warehouse phone 2",
  "tenant":{"name":"Demo warehouse","language":"ru"}}
 ```
 `Cache-Control: no-store`. The key is in this one response only.

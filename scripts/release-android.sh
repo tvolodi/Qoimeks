@@ -14,6 +14,7 @@ first_release=0
 dry_run=0
 manifest_url=""
 no_update_check=0
+server_url=""
 min_code=""
 notes_ru=""
 notes_kk=""
@@ -32,6 +33,8 @@ Usage: scripts/release-android.sh [options]
   --notes-kk TEXT        release notes in Kazakh
   --notes-file FILE      notes as lines "ru: ..." and "kk: ..." (instead of the two above)
   --manifest-url URL     manifest URL built into the app (default: <base-url>latest.json)
+  --server-url URL       default server address built into the app (https; http only for
+                         localhost or a private address)
   --no-update-check      build without the in-app update check (e.g. a Google Play build)
   --dry-run              run every check, print the build command, write nothing
 USAGE
@@ -55,6 +58,7 @@ while [ $# -gt 0 ]; do
         --notes-kk) notes_kk="$2"; shift 2 ;;
         --notes-file) notes_file="$2"; shift 2 ;;
         --manifest-url) manifest_url="$2"; shift 2 ;;
+        --server-url) server_url="$2"; shift 2 ;;
         --no-update-check) no_update_check=1; shift ;;
         --dry-run) dry_run=1; shift ;;
         *) usage >&2; die "unknown option $1" ;;
@@ -122,6 +126,20 @@ if [ "$no_update_check" = 1 ]; then
 else
     [ -n "$manifest_url" ] || manifest_url="${base_url%/}/latest.json"
     dart_defines+=("--dart-define=UPDATE_MANIFEST_URL=$manifest_url")
+fi
+if [ -n "$server_url" ]; then
+    case "$server_url" in
+        *[[:space:]]*) die "--server-url must not contain spaces, got '$server_url'" ;;
+        https://?*) ;;
+        http://?*)
+            host=${server_url#http://}; host=${host%%[/?#]*}; host=${host##*@}; host=${host%:*}
+            case "$host" in
+                localhost|127.*|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) ;;
+                *) die "--server-url $server_url: plain http is allowed only for localhost or a private address; use https" ;;
+            esac ;;
+        *) die "--server-url must be an https URL, got '$server_url'" ;;
+    esac
+    dart_defines+=("--dart-define=DEFAULT_SERVER_URL=$server_url")
 fi
 # DART-DEFINES: end
 
