@@ -89,7 +89,8 @@ func (s *Server) pairExchange(w http.ResponseWriter, r *http.Request, limiter *k
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"device_id":  d.ID.String(),
-		"device_key": key, // shown once: only its hash is stored
+		"label":      d.Label, // the name the pairing gave, or the app's own when it had none
+		"device_key": key,     // shown once: only its hash is stored
 		"tenant":     map[string]string{"name": t.Name, "language": t.Language},
 	})
 }

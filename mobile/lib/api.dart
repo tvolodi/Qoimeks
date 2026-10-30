@@ -145,6 +145,7 @@ class PairResult {
     required this.deviceKey,
     required this.tenantName,
     required this.tenantLanguage,
+    this.label = '',
   });
 
   factory PairResult.fromJson(Map<String, dynamic> j) {
@@ -156,6 +157,7 @@ class PairResult {
       deviceKey: key,
       tenantName: tenant is Map ? '${tenant['name'] ?? ''}' : '',
       tenantLanguage: tenant is Map ? '${tenant['language'] ?? ''}' : '',
+      label: j['label'] is String ? j['label'] as String : '',
     );
   }
 
@@ -164,6 +166,8 @@ class PairResult {
   final String tenantName;
   final String tenantLanguage;
 
+  /// The device name the server stored (the pairing's label); empty from an older server.
+  final String label;
   @override
   String toString() => 'PairResult(deviceId: $deviceId, tenant: $tenantName, key: ***)';
 }

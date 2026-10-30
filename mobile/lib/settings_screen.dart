@@ -156,7 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       setState(() {
         _pairing = false;
-        _pairLabel = label;
+        _pairLabel = r.label.isEmpty ? label : r.label;
         _pairCode.clear();
       });
     } catch (e) {

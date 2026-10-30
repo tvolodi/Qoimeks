@@ -350,3 +350,20 @@ func TestExchangeDoesNotChangeOldAuth(t *testing.T) {
 	call(t, "GET", base+"/api/catalog", "shared-token", nil, 200, nil)
 	call(t, "GET", base+"/api/catalog", tn.AccessCode, nil, 200, nil)
 }
+
+func TestExchangeKeepsPairingLabel(t *testing.T) {
+	_, base, _, tn := pairSetup(t)
+	var pb pairingBody
+	call(t, "POST", pairingURL(base, tn.TenantID, "pairings"), provToken, map[string]any{"label": "uat web 1"}, 201, &pb)
+	res := exchange(t, base, "", map[string]string{"code": pb.Code, "device_label": "web"})
+	if res.status != 200 || res.body["label"] != "uat web 1" {
+		t.Fatalf("exchange: %d %s", res.status, res.raw)
+	}
+	var list struct {
+		Devices []deviceBody `json:"devices"`
+	}
+	call(t, "GET", pairingURL(base, tn.TenantID, "devices"), provToken, nil, 200, &list)
+	if len(list.Devices) != 1 || list.Devices[0].Label != "uat web 1" {
+		t.Fatalf("devices = %+v", list.Devices)
+	}
+}

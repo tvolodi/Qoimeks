@@ -83,6 +83,7 @@ void main() {
   Future<http.Response> ok(http.Request r) async => _json(200, {
     'device_id': 'd-1',
     'device_key': _key,
+    'label': 'Pairing name',
     'tenant': {'name': 'Demo', 'language': 'ru'},
   });
 
@@ -117,7 +118,7 @@ void main() {
       ),
     );
     expect(field.obscureText, isTrue);
-    expect(find.text('Подключено как «Samsung A15»'), findsOneWidget);
+    expect(find.text('Подключено как «Pairing name»'), findsOneWidget);
     expect(
       find.byWidgetPredicate((w) => w is Text && (w.data ?? '').contains(_key)),
       findsNothing,
