@@ -378,3 +378,23 @@ func TestDeviceRevokeListTouch(t *testing.T) {
 		t.Fatalf("unknown device: %v", err)
 	}
 }
+
+func TestPairingLabelWinsOverAppLabel(t *testing.T) {
+	st := storetest.New(t)
+	ctx := t.Context()
+	tn, _ := newTenant(t, st)
+	_, code, err := st.CreatePairing(ctx, tn.ID, "uat web 1", 0, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _, err := st.ExchangePairing(ctx, code, store.DeviceInfo{Label: "web"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Label != "uat web 1" {
+		t.Fatalf("label = %q, want the pairing's", d.Label)
+	}
+	if d2, _ := pairOne(t, st, tn, "Samsung A15"); d2.Label != "Samsung A15" {
+		t.Fatalf("unlabelled pairing: label = %q, want the app's", d2.Label)
+	}
+}
