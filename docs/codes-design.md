@@ -1,8 +1,8 @@
-# Codes for SKUs and locations — design (not built)
+# Codes for SKUs and locations — design (built)
 
-Status: design only, 2026-10-27. Sources: portfolio request `qoimeks-codes-and-design.md` part 2,
+Status: **built** as Q-04 (pull requests 50–55, merged 2026-10-30); see "What differs from the design" at the end. Written as a design on 2026-10-27. Sources: portfolio request `qoimeks-codes-and-design.md` part 2,
 decisions D-033 (codes) and D-036 (screens follow the design system: `ai-dala-portfolio/design-system`,
-`RULES.md`, `demo.html` section "Codes"). Build starts after the field-test feedback. Qoimeks is a pilot:
+`RULES.md`, `demo.html` section "Codes"). Qoimeks is a pilot:
 this is the smallest design that meets D-033.
 
 ## 1. Code types in version 1
@@ -24,7 +24,7 @@ this is the smallest design that meets D-033.
 
 ## 2. Data model
 
-New migration `007_codes.sql`, applied per tenant schema like the ledger tables (not in `publicOnly`), so the
+New migration `011_codes.sql` (design said 007; 007 was taken by `tenants_expiry`), applied per tenant schema like the ledger tables (not in `publicOnly`), so the
 schema-per-tenant layout gives tenant scope with no `tenant_id` column.
 
 ```sql
@@ -184,7 +184,7 @@ Not small (leave out of v1):
 
 | Part | Size |
 |---|---|
-| Migration `007_codes.sql` + copy of `skus.barcode` | small |
+| Migration `011_codes.sql` + copy of `skus.barcode` | small |
 | Store: assign (transaction: object exists, insert, map unique violation to a conflict that carries the owner), list, remove, lookup; EAN check digit helper | small–medium |
 | API handlers, errors with `reason`/`owner`, tests with the tenant-schema harness (two tenants may use the same code) | medium |
 | Catalog/export additions (codes in `GET /api/catalog`, export column) | small |
@@ -223,3 +223,35 @@ refer to a unit (a ledger change) is a separate design and deliberately not deci
 ## Left out on purpose
 Label generation, accounts/permissions, unit items, offline assign, code editing (remove and add instead),
 camera on the web.
+
+## What differs from the design
+
+Built in `server/internal/store/migrations/011_codes.sql`, `server/internal/store/codes.go`, `server/internal/api/codes.go`,
+`mobile/lib/codes.dart` and `mobile/lib/code_find.dart`. Decisions of D-058 settle the open questions of section 8.
+
+- **Migration number.** `011_codes.sql`, not `007` (007 is `tenants_expiry`). The `skus.barcode` copy is in SQL; with
+  two SKUs holding the same barcode the lowest id keeps it. The copied rows have `created_by = 'migration'`.
+- **Code types** are as designed: `ean13`, `ean8`, `code128`, `qr`, `manual`. The server checks EAN length and check digit
+  for `ean13`/`ean8`, 48 printable ASCII characters for `code128`, 256 for `qr`, 64 for `manual`; no spaces or control
+  characters in any. The app guesses the type (`guessCodeType`): EAN only when the check digit is right, else `manual`.
+- **Codes in `GET /api/catalog`.** Decided at build time: each SKU and location in the catalog carries its active `codes`
+  (omitted when empty), so there is no `GET /api/codes/all`. The export has a "Коды / Codes" column (SKU codes only).
+- **Errors.** Every failure of the codes calls carries a `reason`: `code_in_use` (409, with `code` and `owner`),
+  `id_conflict` (409), `invalid_code` (400), `invalid_request` (400), `object_not_found` (404 on assign),
+  `code_not_found` (404 on lookup and remove). The duplicate error body is
+  `{"error":..., "reason":"code_in_use", "code":..., "owner":{object_type, object_id, object_code, object_name}}`;
+  the app builds its text from `reason` and `owner`.
+- **Assign** is serialized per code by a transaction advisory lock; the unique index is the last guard. Assigning a code the
+  object already has returns 200 with the existing row. `operator` and `id` are required.
+- **Soft delete.** As designed: `removed_at`/`removed_by`, the code is freed for reuse, removing twice returns the same row.
+  `DELETE /api/codes/{id}` needs `?operator=`, otherwise 400.
+- **D-058 decisions:**
+  - any holder of the access code may assign and remove codes (no roles);
+  - no offline lookup in v1: scan-to-find and assign need the server; the catalog's codes are not used as an offline cache;
+  - codes are case-sensitive, for every type;
+  - RFID only through the typed field (`manual`), no antenna reading and no `rfid` type;
+  - the Excel import column "Штрихкод" is the last column and may slip; it is optional and old workbooks import as before.
+- **Unknown code in the operation form** (open question 4): the form offers to assign the unknown code to the item already
+  chosen (`AssignTarget` in `code_find.dart`); the assign id is made per unknown code so a retry is the same assign.
+- **Not built, as planned:** label printing, `PATCH`, bulk assign, a codes sheet in Excel, moving a code through Excel,
+  unit items, location codes in the export, camera on the web.
