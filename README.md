@@ -316,7 +316,12 @@ fails when `mobile/android/key.properties` is missing (a release is never signed
 debug key), and when the version code is not higher than the last published one, read from
 `<out>/latest.json` or `--last-published N`; with neither, pass `--first-release`.
 Other options: `--out DIR`, `--base-url URL` (default `https://ai-dala.com/qoimeks/`),
-`--min-version-code N` (default: the previous manifest value). The script test is
+`--min-version-code N` (default: the previous manifest value), `--server-url URL` (the
+server address the app starts with, built in as `--dart-define=DEFAULT_SERVER_URL=URL`; must
+be an `https` URL without spaces, plain `http` only for localhost or a private address; without
+it the setting stays empty, as before), for example a QA build:
+`--server-url https://qoimeks-qa.ai-dala.com --base-url https://qoimeks-qa.ai-dala.com/apk/ --out ../release-qa`.
+The script test is
 `bash scripts/test-release.sh`; `go test ./...` runs it too.
 
 ### Fonts

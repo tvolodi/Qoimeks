@@ -60,6 +60,21 @@ run --out "$tmp/o3" --first-release --dry-run --no-update-check "${notes[@]}"; r
 run --out "$tmp/o3" --first-release --dry-run --no-update-check --manifest-url https://x.org/y.json "${notes[@]}"; rc=$?
 [ $rc -ne 0 ]; check "--no-update-check with --manifest-url fails" $?
 
+# server url define
+run --out "$tmp/o3" --first-release --dry-run "${notes[@]}"
+! grep -q DEFAULT_SERVER_URL "$tmp/stdout"; check "no --server-url adds no define" $?
+run --out "$tmp/o3" --first-release --dry-run --server-url https://qoimeks-qa.ai-dala.com "${notes[@]}"; rc=$?
+[ $rc -eq 0 ] && grep -qF -- "--dart-define=DEFAULT_SERVER_URL=https://qoimeks-qa.ai-dala.com" "$tmp/stdout"
+check "--server-url adds the define" $?
+for u in http://192.168.1.5:8080 http://localhost:8080 http://10.0.2.2:8080; do
+    run --out "$tmp/o3" --first-release --dry-run --server-url "$u" "${notes[@]}"; rc=$?
+    [ $rc -eq 0 ] && grep -qF -- "DEFAULT_SERVER_URL=$u" "$tmp/stdout"; check "--server-url accepts $u" $?
+done
+for u in http://example.com ftp://x.org "https://a b.org" example.com https://; do
+    run --out "$tmp/o3" --first-release --dry-run --server-url "$u" "${notes[@]}"; rc=$?
+    [ $rc -ne 0 ] && grep -q -- "--server-url" "$tmp/stderr"; check "--server-url refuses '$u'" $?
+done
+
 # first release
 out="$tmp/o4"
 run --out "$out" --first-release "${notes[@]}"; rc=$?
